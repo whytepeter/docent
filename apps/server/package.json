@@ -1,0 +1,15 @@
+{
+  "name": "@docent/server",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": { "dev": "tsx watch src/dev.ts" },
+  "dependencies": {
+    "@docent/analyze": "workspace:*",
+    "@docent/contracts": "workspace:*",
+    "@docent/llm": "workspace:*",
+    "@docent/extract": "workspace:*",
+    "@hono/node-server": "^2.1.5",
+    "hono": "^4.13.13"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "@docent/cli",
+  "private": true,
+  "type": "module",
+  "bin": { "docent": "./src/index.ts" },
+  "dependencies": {
+    "@docent/analyze": "workspace:*",
+    "@docent/extract": "workspace:*",
+    "@docent/llm": "workspace:*",
+    "@docent/server": "workspace:*"
+  }
+}

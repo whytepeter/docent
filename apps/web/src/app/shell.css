@@ -1,0 +1,42 @@
+.stage { position: fixed; inset: 0; overflow: hidden; background: var(--paper); }
+
+/* The canvas is the page. */
+.canvas { position: absolute; inset: 0; animation: fade .25s ease; }
+
+/* Floating location + search, centered in the open space between panels. */
+.topbar { position: fixed; z-index: 15; top: 12px; left: var(--inset-left); right: var(--inset-right); display: flex; justify-content: center; pointer-events: none; transition: left .3s var(--ease-drawer), right .3s var(--ease-drawer); }
+.location { pointer-events: auto; display: flex; align-items: center; gap: 6px; height: 44px; padding: 0 5px 0 14px; max-width: 100%; }
+.where { display: flex; align-items: baseline; gap: 6px; min-width: 0; white-space: nowrap; overflow: hidden; padding-right: 8px; }
+.where b { font: 650 14px var(--display); letter-spacing: -.015em; overflow: hidden; text-overflow: ellipsis; }
+.where b.mono { font: 600 13px var(--mono); letter-spacing: 0; }
+.crumb { border: 0; background: none; padding: 0; color: var(--ink-3); font-size: 12.5px; cursor: pointer; flex: none; max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
+.crumb:hover { color: var(--accent-ink); }
+.where .sep { color: var(--line-2); flex: none; }
+.search-pill { display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 6px 0 11px; border: 0; border-left: 1px solid var(--line); border-radius: 0 10px 10px 0; background: none; color: var(--ink-3); cursor: text; font-size: 13px; flex: none; transition: color .15s ease; }
+.search-pill:hover { color: var(--ink-2); }
+.search-pill span { padding-right: 18px; }
+
+/* Top-right cluster. */
+.corner { position: fixed; z-index: 15; top: 12px; right: 12px; height: 44px; display: flex; align-items: center; gap: 2px; padding: 0 6px; }
+.corner:empty { display: none; }
+.fresh { color: var(--amber); font-weight: 600; background: var(--amber-soft); }
+
+/* Floating details panel. */
+.details { position: fixed; z-index: 14; top: 64px; right: 12px; bottom: 12px; width: 384px; overflow: hidden auto;
+  opacity: 0; transform: translateX(16px) scale(.985); pointer-events: none; visibility: hidden; transform-origin: top right;
+  transition: opacity .2s ease, transform .3s var(--ease-drawer), visibility 0s linear .3s; }
+.details.shown { opacity: 1; transform: none; pointer-events: auto; visibility: visible; transition: opacity .2s ease, transform .3s var(--ease-drawer), visibility 0s; }
+.details-in { padding: 20px 20px 40px; animation: rise .26s var(--ease-out); }
+
+@media (max-width: 900px) {
+  .search-pill span, .search-pill kbd { display: none; }
+  .crumb { display: none; }
+  .where .sep { display: none; }
+}
+@media (max-width: 640px) {
+  .details { top: auto; left: 8px; right: 8px; bottom: 8px; width: auto; height: 60vh; transform: translateY(24px); }
+  .details.shown { transform: none; }
+  .corner { top: auto; bottom: 12px; }
+}
+/* Messages on an empty canvas sit centered in the open space between panels. */
+.canvas > .center-msg { position: absolute; top: 64px; bottom: 64px; left: var(--inset-left); right: var(--inset-right); margin: 0; display: flex; align-items: center; justify-content: center; transition: left .3s var(--ease-drawer), right .3s var(--ease-drawer); }

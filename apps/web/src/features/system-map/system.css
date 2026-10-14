@@ -1,0 +1,14 @@
+.system { position: absolute; inset: 0; }
+.system-map { position: absolute; inset: 0; }
+.welcome { position: absolute; z-index: 5; top: 76px; left: calc(var(--inset-left) + 8px); max-width: 520px; pointer-events: none; animation: rise .4s var(--ease-out); transition: left .3s var(--ease-drawer); }
+.welcome h1 { font: 650 28px/1.15 var(--display); letter-spacing: -.03em; margin: 0 0 6px; }
+.welcome p { margin: 0; color: var(--ink-2); font-size: 13.5px; }
+.welcome .start { pointer-events: auto; margin-top: 12px; display: inline-flex; align-items: center; gap: 8px; border: 0; background: var(--accent); color: var(--on-accent); padding: 7px 8px 7px 14px; border-radius: 999px; font-weight: 600; font-size: 12.5px; cursor: pointer; box-shadow: var(--shadow-card); transition: transform .14s var(--ease-out), filter .15s ease; }
+.welcome .start:hover { filter: brightness(1.04); }
+.welcome .start:active { transform: scale(.97); }
+.welcome .start i { width: 22px; height: 22px; border-radius: 50%; background: rgba(255, 255, 255, .2); display: grid; place-items: center; font-style: normal; transition: transform .2s var(--ease-out); }
+.welcome .start:hover i { transform: translateX(2px); }
+.map-hint { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 5; color: var(--ink-3); font-size: 12px; background: var(--card); border: 1px solid var(--line); padding: 5px 12px; border-radius: 999px; pointer-events: none; }
+.welcome-actions { display: flex; gap: 8px; align-items: center; margin-top: 12px; pointer-events: auto; }
+.welcome .welcome-actions .start { margin-top: 0; }
+.welcome .start:disabled { opacity: .7; cursor: progress; }

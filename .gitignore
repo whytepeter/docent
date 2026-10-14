@@ -1,0 +1,5 @@
+node_modules/
+.docent-cache/
+*.log
+.DS_Store
+dist/

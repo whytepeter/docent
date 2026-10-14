@@ -1,0 +1,28 @@
+.feature-summary { font-size: 13.5px; color: var(--ink-2); margin: 8px 0 0; line-height: 1.55; }
+.muted { color: var(--ink-3); }
+.analogy { margin: 4px 0 10px; padding: 12px 14px; border-radius: 11px; background: var(--accent-soft); font-size: 13px; line-height: 1.55; color: var(--ink); }
+.analogy b { color: var(--accent-ink); }
+.status-reason { font-size: 12.5px; color: var(--ink-2); margin: 0 0 12px; line-height: 1.55; }
+.status { text-transform: capitalize; font-weight: 600; }
+.status.working { background: var(--sage-soft) !important; color: var(--sage); }
+.status.partial { background: var(--amber-soft) !important; color: var(--amber); }
+.status.dead { background: var(--brick-soft) !important; color: var(--brick); }
+.stale { background: var(--amber-soft) !important; color: var(--amber); }
+.claim { display: grid; grid-template-columns: 12px 1fr; gap: 9px; padding: 9px 0; border-top: 1px solid var(--line); }
+.claim:first-child { border-top: 0; padding-top: 2px; }
+.claim > .dot, .claim > .sev-dot { margin-top: 6px; }
+.claim p { margin: 0; font-size: 13px; line-height: 1.55; }
+.dot.record { background: var(--hue-app); }
+.sev-dot { width: 7px; height: 7px; border-radius: 2px; display: inline-block; }
+.sev-dot.high { background: var(--brick-dot); }
+.sev-dot.medium { background: var(--amber-dot); }
+.sev-dot.low { background: var(--ink-3); }
+.evidence { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.ev-chip { border: 1px solid var(--line); background: var(--paper); color: var(--ink-2); font: 500 10.5px var(--mono); padding: 1px 7px; border-radius: 999px; cursor: pointer; transition: border-color .15s ease, color .15s ease; }
+.ev-chip:hover { border-color: var(--accent); color: var(--accent-ink); }
+.ev-chip.bad { border-style: dashed; color: var(--amber); }
+.ev-chip.static { cursor: default; }
+.check-note { margin-top: 5px !important; font-size: 11.5px !important; color: var(--amber); }
+.feature-empty { text-align: left; max-width: 460px; }
+.feature-empty h2 { font: 650 24px var(--display); letter-spacing: -.025em; margin: 0 0 6px; color: var(--ink); }
+.feature-empty p { margin: 0 0 10px; color: var(--ink-2); font-size: 13.5px; line-height: 1.55; }

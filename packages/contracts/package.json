@@ -1,0 +1,7 @@
+{
+  "name": "@docent/contracts",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": { "@docent/analyze": "workspace:*", "@docent/extract": "workspace:*" }
+}

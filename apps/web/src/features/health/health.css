@@ -1,0 +1,7 @@
+.tbtn.warn { color: var(--amber); font-weight: 650; }
+.pop { position: fixed; top: 54px; right: 14px; width: 400px; max-height: 72vh; overflow: auto; z-index: 30; padding: 16px 20px 8px;
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-float);
+  transform-origin: top right; animation: popin .2s var(--ease-out); }
+.pop h3 { font: 650 17px var(--display); letter-spacing: -.02em; margin: 2px 0 4px; }
+.pop p { margin: 0 0 8px; color: var(--ink-2); font-size: 12.5px; }
+@keyframes popin { from { opacity: 0; transform: scale(.97); } }

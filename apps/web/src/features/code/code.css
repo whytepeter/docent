@@ -1,0 +1,22 @@
+.code { font: 11.5px/1.7 var(--mono); }
+.code pre { margin: 0; padding: 8px 0; background: transparent !important; white-space: pre-wrap; word-break: break-word; }
+.code code { background: none; padding: 0; font-size: inherit; counter-reset: none; }
+.code .line { display: inline-block; width: 100%; padding: 0 14px 0 52px; position: relative; min-height: 1.65em; }
+.code .line::before { content: attr(data-line); position: absolute; left: 0; width: 38px; text-align: right; color: var(--ink-3); opacity: .7; user-select: none; }
+.code .line.on { background: var(--hl); box-shadow: inset 2px 0 0 var(--hl-bar); }
+@media (prefers-color-scheme: dark) {
+  .code .shiki, .code .shiki span { color: var(--shiki-dark) !important; }
+}
+.code .shiki { background: transparent !important; }
+.code-loading { display: flex; justify-content: center; padding: 18px; }
+
+.scrim { position: fixed; inset: 0; background: rgba(13, 15, 19, .28); z-index: 40; animation: fade .2s ease; }
+.sheet { position: fixed; top: 68px; left: 50%; transform: translateX(-50%); width: min(760px, calc(100% - 32px)); max-height: calc(100vh - 96px);
+  display: flex; flex-direction: column; background: var(--card); border-radius: var(--r-lg); box-shadow: var(--shadow-float); border: 1px solid var(--line); z-index: 41; overflow: hidden; animation: sheet .3s var(--ease-out); }
+@keyframes sheet { from { opacity: 0; transform: translateX(-50%) translateY(-8px) scale(.985); } }
+.sheet header { display: flex; align-items: flex-start; gap: 10px; padding: 16px 18px 14px; border-bottom: 1px solid var(--line); }
+.sheet header > div { min-width: 0; flex: 1; }
+.sheet h3 { margin: 0; font: 600 13.5px var(--mono); }
+.sheet h3 span { font: 400 12px var(--sans); color: var(--ink-2); }
+.sheet .path { font: 11px var(--mono); color: var(--ink-3); overflow-wrap: anywhere; }
+.sheet-body { overflow: auto; flex: 1; background: var(--paper); }

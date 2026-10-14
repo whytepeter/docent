@@ -1,0 +1,21 @@
+import { Hono } from "hono";
+import type { Feature } from "@docent/analyze";
+import type { AnalysisService } from "./service.ts";
+
+export function analysisRoutes(svc: AnalysisService): Hono {
+  return new Hono()
+    .get("/features", (c) => c.json(svc.state()))
+    .get("/features/:id", (c) => {
+      const d = svc.detail(c.req.param("id"));
+      return d ? c.json(d) : c.json({ error: "No such feature" }, 404);
+    })
+    .post("/features/discover", (c) => c.json(svc.startDiscovery()))
+    .post("/features/verify", async (c) => {
+      const body = (await c.req.json().catch(() => ({}))) as { id?: string };
+      return c.json(svc.startVerify(body.id));
+    })
+    .put("/features", async (c) => {
+      const body = (await c.req.json()) as { features: Feature[]; approve?: boolean };
+      return c.json(svc.saveEdits(body));
+    });
+}
