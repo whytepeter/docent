@@ -58,7 +58,7 @@ export const api = {
   writeEpisode: (id: string) => request<Job>(`/api/episodes/${q(id)}/write`, { method: "POST" }),
   settings: () => request<Settings>("/api/settings"),
   setKey: (provider: VoiceProvider | "anthropic", key: string | null) => request<Settings>("/api/settings/keys", { ...json({ provider, key }), method: "PUT" }),
-  setVoice: (patch: { provider?: VoiceProvider; voice?: string; speed?: number; expressive?: boolean }) => request<Settings>("/api/settings/voice", { ...json(patch), method: "PUT" }),
+  setVoice: (patch: { provider?: VoiceProvider; voice?: string; speed?: number; expressive?: boolean; pronunciations?: Record<string, string> }) => request<Settings>("/api/settings/voice", { ...json(patch), method: "PUT" }),
   setClaude: (mode: "claude-code" | "api") => request<Settings>("/api/settings/claude", { ...json({ mode }), method: "PUT" }),
   voices: (provider: VoiceProvider, q: string) => request<VoiceOption[]>(`/api/settings/voices?provider=${provider}&q=${q ? encodeURIComponent(q) : ""}`),
   previewVoice: (provider: VoiceProvider, voice: string) => request<VoiceClip>("/api/settings/voices/preview", json({ provider, voice })),

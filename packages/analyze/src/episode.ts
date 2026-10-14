@@ -1,5 +1,5 @@
 import type { Facts } from "@docent/extract";
-import type { LlmProvider } from "@docent/llm";
+import { redact, type LlmProvider } from "@docent/llm";
 import { makeChecker } from "./citations.ts";
 import { featureDigest } from "./digest.ts";
 import { refuteClaims } from "./refute.ts";
@@ -149,9 +149,9 @@ export function clean(spec: EpisodeSpec, facts: Facts) {
         links: st.links.filter((l) => linkIds.has(l)),
         packets: st.packets.filter((p) => linkIds.has(p.link)),
         code: st.code.file && codeOk(st.code) ? { file: st.code.file, start: st.code.start, end: Math.min(st.code.end, files.get(st.code.file)!.lines) } : null,
-        say: st.say,
+        say: redact(st.say),
         tone: st.tone,
-        caption: st.caption,
+        caption: redact(st.caption),
         predict: st.predict && st.predict.options.some((o) => o.correct) ? { question: st.predict.question, options: st.predict.options } : null,
       };
     }),
@@ -161,4 +161,21 @@ export function clean(spec: EpisodeSpec, facts: Facts) {
     episode: { title: spec.title, intro: spec.intro, analogy: spec.analogy, cast, links, scenes, selfCheck: spec.selfCheck.map((q) => ({ question: q.question })), exercise: spec.exercise, notes },
     claims,
   };
+}
+
+export type NarrationTone = NonNullable<Episode["scenes"][number]["steps"][number]["tone"]>;
+
+/**
+ * What the narrator says at a step, and how: a predict step asks its question (curious); any other step
+ * says its narration in the tone the writer chose. Episodes written before tones existed infer one.
+ */
+export function narrationLine(e: Episode, at: number): { text: string; tone: NarrationTone } | null {
+  const found = e.scenes.flatMap((scene) => scene.steps.map((step) => ({ scene, step })))[at];
+  if (!found) return null;
+  const { scene, step } = found;
+  if (step.predict) return { text: step.predict.question, tone: "curious" };
+  if (step.tone) return { text: step.say, tone: step.tone };
+  if (/\?\s*$/.test(step.say)) return { text: step.say, tone: "curious" };
+  if (/wrong|break|risk|careful|fail|trust/i.test(`${scene.title} ${scene.objective}`)) return { text: step.say, tone: "concerned" };
+  return { text: step.say, tone: "calm" };
 }

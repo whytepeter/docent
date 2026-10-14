@@ -5,6 +5,7 @@ import { join } from "node:path";
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
+import { redact } from "./redact.ts";
 
 /**
  * How Docent talks to Claude. Two ways in, one interface:
@@ -57,8 +58,14 @@ export class LlmError extends Error {
 
 const READ_TOOLS = ["Read", "Grep", "Glob"];
 
-/** Secret-bearing files the session may never open, by Read, Grep or Glob. */
-const SECRET_FILES = ["**/.env", "**/.env.*", "**/*.pem", "**/*.key", "**/id_rsa*", "**/id_ed25519*"];
+/**
+ * Files the session may never open, by Read, Grep or Glob: secret-bearing files, and agent session folders,
+ * which are full of pasted keys and tokens and would reach Claude unredacted.
+ */
+const SECRET_FILES = [
+  "**/.env", "**/.env.*", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/id_rsa*", "**/id_ed25519*", "**/.npmrc", "**/.netrc",
+  "**/.wolf/**", "**/.claude/**", "**/.cursor/**", "**/.codex/**", "**/.agents/**",
+];
 
 /**
  * The analyzed repo is someone else's code, so the session ignores every settings source:
@@ -104,7 +111,7 @@ export class ClaudeCodeProvider implements LlmProvider {
       "--output-format", "json",
       "--no-session-persistence",
       "--model", opts.model ?? DEFAULT_MODEL,
-      "--system-prompt", opts.system,
+      "--system-prompt", redact(opts.system),
       "--json-schema", JSON.stringify(jsonSchema(opts.schema)),
       ...ISOLATION,
       // Only read-only tools exist in the session; nothing can edit files or run commands.
@@ -112,7 +119,7 @@ export class ClaudeCodeProvider implements LlmProvider {
       ...(tools === "read" ? ["--allowedTools", ...READ_TOOLS, "--permission-mode", "dontAsk"] : []),
       ...(opts.effort ? ["--effort", opts.effort] : []),
     ];
-    const raw = await run(this.bin, args, opts.prompt, opts.cwd, opts.signal);
+    const raw = await run(this.bin, args, redact(opts.prompt), opts.cwd, opts.signal);
     let out: ClaudeCodeResult;
     try {
       out = JSON.parse(raw) as ClaudeCodeResult;
@@ -190,8 +197,8 @@ export class ApiProvider implements LlmProvider {
       {
         model,
         max_tokens: 16000,
-        system: opts.system,
-        messages: [{ role: "user", content: opts.prompt }],
+        system: redact(opts.system),
+        messages: [{ role: "user", content: redact(opts.prompt) }],
         output_config: { format: zodOutputFormat(opts.schema as z.ZodType<object>), ...(opts.effort ? { effort: opts.effort } : {}) },
       },
       { signal: opts.signal },
@@ -249,3 +256,4 @@ export function pickProvider(): LlmProvider {
 }
 
 export { z };
+export { hasSecret, redact, REDACTED } from "./redact.ts";

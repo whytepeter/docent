@@ -121,6 +121,28 @@ function VoicePicker({ settings, onChange }: { settings: Settings; onChange: (s:
   );
 }
 
+const toText = (t: Record<string, string>) => Object.entries(t).map(([k, v]) => `${k} = ${v}`).join("\n");
+const fromText = (text: string) =>
+  Object.fromEntries(text.split("\n").map((l) => l.split("=")).filter((p) => p.length >= 2 && p[0]!.trim()).map(([k, ...v]) => [k!.trim(), v.join("=").trim()]));
+
+/** The narrator's pronunciation table: one "term = how to say it" per line, on top of the defaults. */
+function Pronunciations({ settings, onChange }: { settings: Settings; onChange: (s: Settings) => void }) {
+  const [text, setText] = useState(toText(settings.voice.pronunciations));
+  const [saved, setSaved] = useState(false);
+  const dirty = text !== toText(settings.voice.pronunciations);
+  return (
+    <details className="set-pron">
+      <summary>Pronunciations</summary>
+      <p className="set-hint">One per line: <code>term = how to say it</code>. Only the voice changes; the screen keeps the real word. Built in: {Object.keys(settings.voice.defaults).join(", ")}.</p>
+      <textarea rows={4} spellCheck={false} value={text} placeholder={"Applicant API = applicant A P I\nnonce = nonss"} onChange={(e) => (setText(e.target.value), setSaved(false))} aria-label="Pronunciations" />
+      <div className="set-key-row">
+        <button className="set-btn" disabled={!dirty} onClick={() => void api.setVoice({ pronunciations: fromText(text) }).then((s) => (onChange(s), setText(toText(s.voice.pronunciations)), setSaved(true)))}>Save</button>
+        {saved && !dirty && <span className="set-hint">Saved. Lines that change are spoken again; the rest stay cached.</span>}
+      </div>
+    </details>
+  );
+}
+
 /** Settings: the narrator (provider, key, voice, speed, expression) and how Docent reaches Claude. */
 export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const [s, setS] = useState<Settings | null>(null);
@@ -168,6 +190,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                 <input id="set-speed" type="range" min={0.8} max={1.25} step={0.05} value={s.voice.speed} onChange={(e) => setS({ ...s, voice: { ...s.voice, speed: Number(e.target.value) } })} onPointerUp={(e) => void api.setVoice({ speed: Number((e.target as HTMLInputElement).value) }).then(update)} onKeyUp={(e) => void api.setVoice({ speed: Number((e.target as HTMLInputElement).value) }).then(update)} />
                 <span className="set-val">{s.voice.speed.toFixed(2)}×</span>
               </div>
+              <Pronunciations settings={s} onChange={update} />
               <label className="set-row set-toggle">
                 <input type="checkbox" checked={s.voice.expressive} onChange={(e) => void api.setVoice({ expressive: e.target.checked }).then(update)} />
                 <span><b>Expressive</b> · the narrator sounds calm when explaining, curious when asking, concerned about risks</span>

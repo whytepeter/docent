@@ -20,6 +20,12 @@ export function areaOf(path: string): Pick<Area, "id" | "label" | "group" | "pat
   const prefix = srcAt >= 0 && srcAt <= 2 ? dirs.slice(0, srcAt + 1) : [];
   const rest = dirs.slice(prefix.length);
   if (rest.length === 0) {
+    // A package's own src root (packages/llm/src) is that package, merged with its other folders (packages/llm/test).
+    if (prefix.length > 1) {
+      const pkg = prefix.slice(0, -1);
+      const id = pkg.join("/");
+      return { id, label: humanize(pkg.at(-1)!), group: pkg.length >= 2 && CONTAINERS.has(pkg[0]!) ? pkg[0]! : null, path: id };
+    }
     const id = prefix.join("/") || ".";
     return { id, label: "Top level", group: null, path: id };
   }

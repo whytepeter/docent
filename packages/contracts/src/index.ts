@@ -221,6 +221,9 @@ export interface Settings {
     speed: number;
     expressive: boolean;
     keys: Record<VoiceProvider, string | null>;
+    /** Your own entries (term → how to say it); `defaults` apply underneath. */
+    pronunciations: Record<string, string>;
+    defaults: Record<string, string>;
   };
   claude: { mode: "claude-code" | "api"; describe: string; apiKey: string | null };
 }

@@ -1,16 +1,21 @@
 import { execFileSync } from "node:child_process";
-import { cpSync, mkdtempSync } from "node:fs";
+import { cpSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import { extract, type Facts } from "@docent/extract";
 import { applyReview, makeChecker, validateDiscovery, type AnalysisClaim } from "../src/index.ts";
 
+/** A made-up payments key, built from parts so secret scanners don't mistake this test for a leak. */
+const FAKE_KEY = ["sk", "live", "ABCDEFGHIJKLMNOPQRSTUVWX"].join("_");
+
 let root: string;
 let facts: Facts;
 beforeAll(() => {
   root = mkdtempSync(join(tmpdir(), "docent-analyze-"));
   cpSync(join(import.meta.dirname, "../../extract/test/fixture"), root, { recursive: true });
+  // A hardcoded key, as agent-written code sometimes has. Assembled here so no key-shaped string sits in this file.
+  writeFileSync(join(root, "src/lib/keys.ts"), `export const PAYMENTS = "${FAKE_KEY}";\n`);
   const git = (...a: string[]) => execFileSync("git", ["-C", root, "-c", "user.email=t@t", "-c", "user.name=t", ...a]);
   git("init", "-q", "-b", "main");
   git("add", ".");
@@ -70,6 +75,15 @@ describe("citation check", () => {
     });
     expect(out.claims.map((c) => c.label)).toEqual(["inferred", "inferred", "confirmed"]);
     expect(out.claims[0]!.checkNote).toContain("nothing to look for");
+  });
+  it("never accepts a secret as evidence, and never stores one in a claim", () => {
+    const out = makeChecker(root, facts).apply({
+      summary: "", analogy: "", status: "working", statusReason: "", flow: [], issues: [],
+      claims: [{ ...base, text: `payments use ${FAKE_KEY}`, label: "confirmed", evidence: [{ file: "src/lib/keys.ts", start: 1, end: 1, mentions: ["PAYMENTS"] }] }],
+    });
+    expect(out.claims[0]!.label).toBe("inferred");
+    expect(out.claims[0]!.checkNote).toContain("secret");
+    expect(out.claims[0]!.text).not.toContain(FAKE_KEY);
   });
   it("accepts a record only when the commit exists", () => {
     const sha = facts.commits[0]!.sha;

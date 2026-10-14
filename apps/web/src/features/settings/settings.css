@@ -42,3 +42,9 @@
 @keyframes set-in { from { opacity: 0; transform: translateX(14px); } }
 @media (prefers-reduced-motion: reduce) { .settings-over, .settings { animation: none; } }
 @media (max-width: 600px) { .settings-over { padding: 8px; } }
+.set-pron summary { cursor: pointer; font-size: 12.5px; font-weight: 600; color: var(--ink); }
+.set-pron[open] { display: flex; flex-direction: column; gap: 8px; }
+.set-pron p { margin-top: 6px; }
+.set-pron code { font: 11px var(--mono); }
+.set-pron textarea { width: 100%; box-sizing: border-box; resize: vertical; padding: 8px 10px; border-radius: 9px; border: 1px solid var(--line-2); background: var(--paper); color: var(--ink); font: 12.5px/1.5 var(--mono); outline: none; }
+.set-pron textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }

@@ -20,6 +20,7 @@ const USAGE = `docent — guided tours of a codebase
   docent features <repo>         show the feature map
   docent approve <repo>          freeze the feature map as reviewed
   docent episode <repo> <id>     write the narrated episode for a verified feature
+  docent voice <repo> <id>       speak every line of an episode ahead of time (cached)
   docent verify <repo> [id]      verify features not yet verified (or one, again) with checked evidence
 
 Facts are cached in ~/.docent/repos/.`;
@@ -164,6 +165,27 @@ async function episode(repo: string, id: string) {
   if (e.notes.length) console.log(dim(`  clean-up: ${e.notes.join("; ")}`));
 }
 
+/** Speaks every line of an episode ahead of time, so playback never waits for a clip. Cached lines are skipped. */
+async function voice(repo: string, id: string) {
+  const { loadEpisode, narrationLine } = await import("@docent/analyze");
+  const { pickVoice, speak } = await import("@docent/voice");
+  const e = loadEpisode(resolve(repo), id);
+  if (!e) throw new Error(`No episode for ${id} yet. Run: docent episode ${repo} ${id}`);
+  const v = pickVoice();
+  if ("reason" in v) throw new Error(v.reason);
+  const total = e.scenes.reduce((n, s) => n + s.steps.length, 0);
+  console.log(dim(`  ${v.adapter.id} · ${total} lines for ${e.title}`));
+  const started = Date.now();
+  let seconds = 0;
+  for (let at = 0; at < total; at++) {
+    const line = narrationLine(e, at)!;
+    const clip = await speak(v.adapter, v.voice, line.text, { speed: v.speed, ...(v.expressive ? { tone: line.tone } : {}) });
+    seconds += clip.durationMs / 1000;
+    process.stdout.write(`\r  ${at + 1}/${total} · ${line.tone.padEnd(9)} · ${(clip.durationMs / 1000).toFixed(1)}s   `);
+  }
+  console.log(`\n  ${bold("Ready")} ${dim(`· ${Math.round(seconds)}s of narration · ${((Date.now() - started) / 1000).toFixed(0)}s to build`)}`);
+}
+
 async function verify(repo: string, only?: string) {
   const { filesHash, loadAnalysis, loadFeatureMap, saveAnalysis, verifyAll } = await import("@docent/analyze");
   const { pickProvider } = await import("@docent/llm");
@@ -235,6 +257,7 @@ try {
     console.log("  Feature map approved and frozen.");
   } else if (cmd === "verify" && repo) await verify(repo, name);
   else if (cmd === "episode" && repo && name) await episode(repo, name);
+  else if (cmd === "voice" && repo && name) await voice(repo, name);
   else if (cmd === "extract" && repo) run(repo);
   else if (cmd === "stats" && repo) printStats(load(repo));
   else if (cmd === "fn" && repo && name) printFn(load(repo), name);

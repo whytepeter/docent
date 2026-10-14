@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import type { Settings, VoiceClip, VoiceOption, VoiceStatus } from "@docent/contracts";
 import { pickProvider, readConfig, writeConfig } from "@docent/llm";
-import { adapterFor, clipAudio, KEY_ENV, pickVoice, PROVIDERS, setVoiceSettings, speak, testKey, voiceSettings, type ProviderId } from "@docent/voice";
+import { adapterFor, clipAudio, DEFAULT_PRONUNCIATIONS, KEY_ENV, pickVoice, PROVIDERS, setVoiceSettings, speak, testKey, voiceSettings, type ProviderId } from "@docent/voice";
 import { hint, setEnvVar } from "./env.ts";
 
 const SAMPLE = "This part is solid. This part I wouldn't trust, and here's why.";
@@ -20,6 +20,8 @@ function settings(): Settings {
       voices: v.voices,
       speed: v.speed,
       expressive: v.expressive,
+      pronunciations: v.pronunciations,
+      defaults: DEFAULT_PRONUNCIATIONS,
       keys: Object.fromEntries(PROVIDERS.map((p) => [p, hint(process.env[KEY_ENV[p]])])) as Record<ProviderId, string | null>,
     },
     claude: { mode: readConfig().provider === "api" ? "api" : "claude-code", describe: claude, apiKey: hint(process.env.ANTHROPIC_API_KEY) },
@@ -62,13 +64,20 @@ export function settingsRoutes(): Hono {
       return c.json<Settings>(settings());
     })
     .put("/settings/voice", async (c) => {
-      const body = (await c.req.json().catch(() => ({}))) as { provider?: string; voice?: string; speed?: number; expressive?: boolean };
+      const body = (await c.req.json().catch(() => ({}))) as { provider?: string; voice?: string; speed?: number; expressive?: boolean; pronunciations?: unknown };
+      const table = body.pronunciations && typeof body.pronunciations === "object"
+        ? Object.fromEntries(Object.entries(body.pronunciations as Record<string, unknown>)
+          .filter(([k, v]) => typeof v === "string" && k.trim() && k.length <= 60 && v.length <= 120)
+          .slice(0, 300)
+          .map(([k, v]) => [k.trim(), (v as string).trim()]))
+        : undefined;
       if (body.provider !== undefined && !isProvider(body.provider)) return c.json({ error: "Unknown provider" }, 400);
       setVoiceSettings({
         ...(isProvider(body.provider) ? { provider: body.provider } : {}),
         ...(typeof body.voice === "string" && body.voice ? { voice: body.voice } : {}),
         ...(typeof body.speed === "number" ? { speed: body.speed } : {}),
         ...(typeof body.expressive === "boolean" ? { expressive: body.expressive } : {}),
+        ...(table ? { pronunciations: table } : {}),
       });
       return c.json<Settings>(settings());
     })

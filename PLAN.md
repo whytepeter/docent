@@ -135,7 +135,11 @@ Runs on your Claude subscription through `packages/llm` (an API key is optional)
 - **Copied code:** extraction finds functions copied across files: "exact" (same body, comments and spacing aside: confirmed) and "same shape" (names and literals changed: inferred, and only for real logic, so thin wrappers configuring one shared component don't count). kyc has none.
 - **All 16 kyc features verified** through the citation check and the second reader (map approved by the user).
 
-**M3 is done.** Remaining polish moves to the backlog: redaction of agent logs before they reach Claude.
+**M3 is done.**
+
+**Secrets (brief §8):** every prompt is redacted before it reaches Claude (private keys, provider tokens, JWTs, connection-string passwords, values assigned to `*_SECRET` / `*_TOKEN` / `*_PASSWORD` / `*_API_KEY`), tuned to leave ordinary code alone. Claude's read tools can't open `.env*`, key files, `.npmrc`/`.netrc`, or agent session folders (`.wolf/`, `.claude/`, `.cursor/`, `.codex/`, `.agents/`). The citation check fails any citation whose lines hold a secret, and claim, issue, narration and caption text is redacted before it's stored. Trade-off: agent logs are no longer read for "why"; commit messages, comments and docs still are. A redacted excerpt path for agent logs can come later if they prove worth it.
+
+**Monorepo overview:** a package's `src` root is named after the package and merged with its other folders, so drawam-style workspaces no longer show a row of "Top level" boxes.
 
 **Backlog found along the way:**
 - Cancel a running job (a mis-click started a duplicate verification with no way to stop it).
@@ -175,7 +179,9 @@ Checked with a stand-in voice in the browser; not yet with Cartesia itself. To h
 - **Settings panel** (gear, top right): pick the narrator's provider (Cartesia or Fish Audio), paste or replace its key (tested by speaking a word before it's saved; stored in Docent's `.env`; only a masked hint comes back), search and preview voices (yours first) and choose one per provider, narration speed, an "expressive" switch, and Claude by subscription or API key.
 - **Fish Audio adapter** (`s2.1-pro`, falling back to the free `s2.1-pro-free` when the account has no API credit). Fish returns no word timings, so words are spread over the real clip length.
 - **Expression:** each episode step carries a tone (calm, warm, curious, concerned, emphatic) that the writer chooses; Cartesia gets an emotion and pace, Fish an inline `[cue]`. Older episodes infer it. Predict questions are spoken too, in a curious tone.
-Still to do: the pronunciation table, `docent voice <repo> <id>` to pre-build every clip.
+- **Pronunciation table:** defaults for terms voices stumble on (JPEG, SHA-256, KYC, CORS, presign…) plus your own lines in Settings; only the audio changes, the screen keeps the real word.
+- **`docent voice <repo> <id>`** speaks every line ahead of time (kyc document upload: 20 lines, 4 min 15 s of narration, built in 52 s; a re-run makes no calls).
+- The document-upload episode was rewritten with tones chosen by the writer (mostly calm; concerned through "what can go wrong").
 
 #### Original M5 plan
 - A `packages/voice` package with one small interface, so any provider plugs in:

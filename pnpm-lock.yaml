@@ -114,6 +114,9 @@ importers:
       '@docent/server':
         specifier: workspace:*
         version: link:../../apps/server
+      '@docent/voice':
+        specifier: workspace:*
+        version: link:../voice
 
   packages/contracts:
     dependencies:

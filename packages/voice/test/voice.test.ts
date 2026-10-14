@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clipAudio, clipHash, wav } from "../src/index.ts";
+import { clipAudio, clipHash, DEFAULT_PRONUNCIATIONS, estimateWords, pronounce, wav } from "../src/index.ts";
 
 describe("voice", () => {
   it("wraps PCM in a playable WAV header", () => {
@@ -17,5 +17,16 @@ describe("voice", () => {
   it("never reads outside the clip cache", () => {
     expect(clipAudio("../../etc/passwd")).toBeNull();
     expect(clipAudio("abc")).toBeNull();
+  });
+  it("says terms the table's way, whole words only", () => {
+    expect(pronounce("The JPEG and the PDF get a SHA-256 each.", DEFAULT_PRONUNCIATIONS)).toBe("The jay-peg and the P D F get a shah two fifty-six each.");
+    expect(pronounce("JPEGs and PDFish stay as written", DEFAULT_PRONUNCIATIONS)).toBe("JPEGs and PDFish stay as written");
+    expect(pronounce("Ask the API", { API: "A P I" })).toBe("Ask the A P I");
+  });
+  it("spreads words over a clip in order when a provider gives no timings", () => {
+    const words = estimateWords("one two three", 3);
+    expect(words.map((w) => w.word)).toEqual(["one", "two", "three"]);
+    expect(words[0]!.start).toBeLessThan(words[1]!.start);
+    expect(words.at(-1)!.end).toBeLessThanOrEqual(3);
   });
 });

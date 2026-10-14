@@ -255,7 +255,33 @@ export const KEY_ENV: Record<ProviderId, string> = { cartesia: "CARTESIA_API_KEY
 const DEFAULT_VOICES: Partial<Record<ProviderId, string>> = { cartesia: "8499aae3-022c-4d55-8283-0c2e8adbefb4" };
 
 interface VoiceConfig {
-  voice?: { provider?: string; voice?: string; voices?: Partial<Record<ProviderId, string>>; speed?: number; expressive?: boolean };
+  voice?: { provider?: string; voice?: string; voices?: Partial<Record<ProviderId, string>>; speed?: number; expressive?: boolean; pronunciations?: Record<string, string> };
+}
+
+/** How the narrator says terms that voices tend to stumble on. Your own entries (Settings) win. */
+export const DEFAULT_PRONUNCIATIONS: Record<string, string> = {
+  JPEG: "jay-peg",
+  "SHA-256": "shah two fifty-six",
+  KYC: "K Y C",
+  CORS: "cores",
+  JSON: "jay-son",
+  presign: "pre-sign",
+  presigned: "pre-signed",
+  OCR: "O C R",
+  UI: "U I",
+  URL: "U R L",
+  XHR: "X H R",
+  PDF: "P D F",
+  CLI: "C L I",
+};
+
+/** Applies a pronunciation table as whole-word text substitution. */
+export function pronounce(text: string, table: Record<string, string>): string {
+  const terms = Object.keys(table).filter(Boolean).sort((a, b) => b.length - a.length);
+  if (!terms.length) return text;
+  const esc = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(`(?<![\\w-])(?:${terms.map(esc).join("|")})(?![\\w-])`, "g");
+  return text.replace(re, (m) => table[m] ?? m);
 }
 
 const configFile = () => join(homedir(), ".docent", "config.json");
@@ -275,6 +301,8 @@ export interface VoiceSettings {
   speed: number;
   /** Whether each line's tone (calm, curious, concerned…) shapes the delivery. */
   expressive: boolean;
+  /** The user's own entries; the defaults apply underneath. */
+  pronunciations: Record<string, string>;
 }
 
 /** The narrator settings from ~/.docent/config.json, with defaults. */
@@ -283,11 +311,11 @@ export function voiceSettings(): VoiceSettings {
   const provider: ProviderId = (PROVIDERS as readonly string[]).includes(v.provider ?? "") ? (v.provider as ProviderId) : "cartesia";
   // Older configs kept one `voice` for the active provider.
   const voices = { ...DEFAULT_VOICES, ...(v.voice ? { [provider]: v.voice } : {}), ...v.voices };
-  return { provider, voices, speed: v.speed ?? 1, expressive: v.expressive ?? true };
+  return { provider, voices, speed: v.speed ?? 1, expressive: v.expressive ?? true, pronunciations: v.pronunciations ?? {} };
 }
 
 /** Saves narrator settings, keeping everything else in the config. */
-export function setVoiceSettings(patch: { provider?: ProviderId; voice?: string; speed?: number; expressive?: boolean }): VoiceSettings {
+export function setVoiceSettings(patch: { provider?: ProviderId; voice?: string; speed?: number; expressive?: boolean; pronunciations?: Record<string, string> }): VoiceSettings {
   const config = readConfig();
   const cur = voiceSettings();
   const provider = patch.provider ?? cur.provider;
@@ -296,6 +324,7 @@ export function setVoiceSettings(patch: { provider?: ProviderId; voice?: string;
     voices: patch.voice ? { ...cur.voices, [provider]: patch.voice } : cur.voices,
     speed: Math.max(0.8, Math.min(1.25, patch.speed ?? cur.speed)),
     expressive: patch.expressive ?? cur.expressive,
+    pronunciations: patch.pronunciations ?? cur.pronunciations,
   };
   mkdirSync(join(homedir(), ".docent"), { recursive: true });
   writeFileSync(configFile(), `${JSON.stringify({ ...config, voice: next }, null, 2)}\n`);
@@ -354,10 +383,12 @@ export async function speak(
   { speed = 1, tone, signal }: { speed?: number; tone?: Tone; signal?: AbortSignal } = {},
 ): Promise<CachedClip> {
   const delivery = speed === 1 && !tone ? "" : `${speed}:${tone ?? ""}`;
-  const hash = clipHash(text, adapter.id, voice, delivery);
+  // The voice says the table's version; the screen keeps the original words.
+  const spoken = pronounce(text, { ...DEFAULT_PRONUNCIATIONS, ...voiceSettings().pronunciations });
+  const hash = clipHash(spoken, adapter.id, voice, delivery);
   const meta = join(cacheDir(), `${hash}.json`);
   if (existsSync(meta) && existsSync(join(cacheDir(), `${hash}.wav`))) return JSON.parse(readFileSync(meta, "utf8")) as CachedClip;
-  const clip = await adapter.synthesize(text, { voice, speed, ...(tone ? { tone } : {}), ...(signal ? { signal } : {}) });
+  const clip = await adapter.synthesize(spoken, { voice, speed, ...(tone ? { tone } : {}), ...(signal ? { signal } : {}) });
   writeFileSync(join(cacheDir(), `${hash}.wav`), clip.audio);
   const out: CachedClip = { hash, durationMs: clip.durationMs, words: clip.words };
   writeFileSync(meta, JSON.stringify(out));

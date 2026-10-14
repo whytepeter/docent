@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Facts } from "@docent/extract";
+import { hasSecret, redact } from "@docent/llm";
 import type { Verification } from "./schemas.ts";
 import type { CheckResult, CheckedEvidence, FeatureAnalysis } from "./types.ts";
 
@@ -27,6 +28,8 @@ export function makeChecker(root: string, facts: Facts) {
     const named = e.mentions.map((m) => m.trim()).filter(Boolean);
     if (!named.length) return { ok: false, reason: `lines ${e.start}–${e.end} cite nothing to look for` };
     const text = lines.slice(Math.max(0, e.start - 1 - SLACK), Math.min(lines.length, e.end + SLACK)).join("\n");
+    // Evidence is shown as a snippet; a line holding a secret can't be evidence.
+    if (hasSecret(lines.slice(e.start - 1, e.end).join("\n"))) return { ok: false, reason: `lines ${e.start}–${e.end} hold a secret` };
     const missing = named.filter((m) => !text.includes(m));
     return missing.length ? { ok: false, reason: `not in lines ${e.start}–${e.end}: ${missing.map((m) => `“${m}”`).join(", ")}` } : { ok: true };
   };
@@ -37,7 +40,9 @@ export function makeChecker(root: string, facts: Facts) {
     checkEvidence,
     apply(v: Verification): Pick<FeatureAnalysis, "flow" | "claims" | "issues"> {
       const withChecks = (ev: Verification["claims"][number]["evidence"]): CheckedEvidence[] => ev.map((e) => ({ ...e, check: checkEvidence(e) }));
-      const claims = v.claims.map((c) => {
+      const claims = v.claims.map((raw) => {
+        // No claim stores or shows a secret, whatever Claude wrote.
+        const c = { ...raw, text: redact(raw.text) };
         const evidence = withChecks(c.evidence);
         const failed = evidence.filter((e) => !e.check.ok);
         if (c.label === "record") {
@@ -54,7 +59,7 @@ export function makeChecker(root: string, facts: Facts) {
       return {
         flow: v.flow.map((s) => ({ ...s, check: checkEvidence(s) })),
         claims,
-        issues: v.issues.map((i) => ({ ...i, evidence: withChecks(i.evidence) })),
+        issues: v.issues.map((i) => ({ ...i, title: redact(i.title), detail: redact(i.detail), evidence: withChecks(i.evidence) })),
       };
     },
   };
