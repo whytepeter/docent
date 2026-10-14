@@ -14,3 +14,5 @@
 .sev.high { color: var(--brick); background: var(--brick-soft); }
 .sev.medium { color: var(--amber); background: var(--amber-soft); }
 .sev.low { color: var(--ink-3); background: var(--fill); }
+.dup + .dup { margin-top: 8px; }
+.dup-head { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--ink-3); padding: 4px 10px 2px; }

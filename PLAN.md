@@ -132,13 +132,20 @@ Runs on your Claude subscription through `packages/llm` (an API key is optional)
 - **"Part of":** file and function details list the features they belong to and the verified flow steps that run through them, including features that only pass through shared code.
 - **Stop a running job:** the job pill has a stop button; Claude sessions in flight are killed and finished features stay saved.
 
-**Still to do in M3:** the user approves the map; verify the remaining 15 features; duplicates across features.
+- **Copied code:** extraction finds functions copied across files: "exact" (same body, comments and spacing aside: confirmed) and "same shape" (names and literals changed: inferred, and only for real logic, so thin wrappers configuring one shared component don't count). kyc has none.
+- **All 16 kyc features verified** through the citation check and the second reader (map approved by the user).
+
+**M3 is done.** Remaining polish moves to the backlog: redaction of agent logs before they reach Claude.
 
 **Backlog found along the way:**
 - Cancel a running job (a mis-click started a duplicate verification with no way to stop it).
 - Unused-export detection: today only files nothing imports are flagged; a file re-exported by a barrel but never used (e.g. `components/base/UploadFile.tsx`) is missed. Discovery's guess about it was half right, which is why guesses stay labeled.
 
-### M3.5: Ask Docent (chat that explains with the canvas)
+### M3.5: Ask Docent (chat that explains with the canvas) — first version done
+Built: `/` or the chat button opens a panel scoped to the current view. The server builds the context from the view (facts, the function's code, what verification established for the features it belongs to) and Claude answers with read-only tools. Every paragraph goes through the citation check and the second reader, like verification claims. Progress streams (reading, answering, checking). The diagram publishes its boxes; Claude sees them as short refs (b1, b2…) and can only point at those (P11: no new boxes). "Show me" plays the scene: boxes light, links animate in their real direction, the camera follows, and the panel shrinks to the caption. "Explain simpler" asks again with an analogy first. Threads are kept per view while the app is open.
+Checked on kyc's `submitDocument` view: "What happens if the storage upload fails for one side?" gave 5 labeled paragraphs and a 5-step scene. On its own it found that the other side's upload isn't cancelled (the mockup's finding, labeled inferred), and the second reader caught an overstatement about which errors show a message.
+Next for it: answers that jump to a view that would show more when the current one can't; keeping threads across reloads.
+
 The user can chat with Docent whenever something isn't clear, and the answer can show, not just tell.
 - **Scoped:** a chat panel that knows what's on screen (system, area, file, function, a flow step or a line) and answers from the facts plus the feature analyses, reading code read-only when needed. Runs on the user's subscription.
 - **Checked:** every reference in an answer goes through the citation check before it is shown; guesses are labeled.

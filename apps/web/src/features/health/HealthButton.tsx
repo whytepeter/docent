@@ -33,7 +33,8 @@ export function HealthButton() {
   const disputed = analysis?.disputed ?? [];
   const stale = analysis?.stale ?? [];
   const serious = issues.filter((i) => i.severity !== "low").length;
-  const count = docs.length + mismatches.length + serious + data.unreferenced.length;
+  const duplicates = data.duplicates ?? [];
+  const count = docs.length + mismatches.length + serious + data.unreferenced.length + duplicates.filter((d) => d.kind === "exact").length;
   if (!count && !issues.length && !disputed.length && !data.inferred.length) return null;
   const close = () => setOpen(false);
   return (
@@ -88,6 +89,18 @@ export function HealthButton() {
               ))}
             </Group>
           )}
+          <Group title="Copied code" count={data.duplicates.length} open={data.duplicates.length > 0 && data.duplicates.length < 4}>
+            {data.duplicates.map((d, n) => (
+              <div key={`dup${n}`} className="dup">
+                <div className="dup-head"><span className={`dot ${d.confidence}`} />{d.kind === "exact" ? "Same code" : "Same code, names changed"} · {d.lines} lines</div>
+                {d.members.map((m) => (
+                  <button key={m.symbol} className="row" onClick={() => (navigate({ view: "fn", id: m.symbol }), close())}>
+                    <span className="grow mono">{m.symbol.split("#")[1]}</span><span className="sub">{shortPath(m.file, 2)}:{m.start}</span>
+                  </button>
+                ))}
+              </div>
+            ))}
+          </Group>
           <Group title="Files nothing imports" count={data.unreferenced.length} open={data.unreferenced.length < 6}>
             {data.unreferenced.map((u) => (
               <button key={u.file} className="row" onClick={() => (navigate({ view: "file", path: u.file }), close())}>

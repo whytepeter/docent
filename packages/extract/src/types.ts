@@ -99,6 +99,15 @@ export interface DocMention {
   removedIn?: { sha: string; subject: string };
 }
 
+export interface DuplicateFact {
+  /** "exact": same body ignoring comments and spacing. "shape": same body with names and literals renamed. */
+  kind: "exact" | "shape";
+  confidence: Confidence;
+  /** Length of the shortest copy. */
+  lines: number;
+  members: { symbol: string; file: string; start: number; end: number }[];
+}
+
 export interface DocFact {
   path: string;
   kind: "doc" | "agent";
@@ -129,5 +138,7 @@ export interface Facts {
   externals: { name: string; files: string[] }[];
   markers: { kind: string; file: string; line: number; text: string }[];
   unreferenced: { file: string; reason: string; confidence: Confidence }[];
+  /** Copy-pasted functions across files. Older cached facts may not have it. */
+  duplicates?: DuplicateFact[];
   warnings: string[];
 }

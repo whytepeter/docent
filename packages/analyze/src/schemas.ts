@@ -63,3 +63,20 @@ export const RefuteSchema = z.object({
   })),
 });
 export type Refutation = z.infer<typeof RefuteSchema>;
+
+/** What Claude returns for a question asked from a view: checked paragraphs, and a scene that shows the answer. */
+export const AnswerSchema = z.object({
+  paragraphs: z.array(z.object({
+    text: z.string().describe("One idea, in plain words. Precise names belong in evidence, not in every sentence"),
+    label: z.enum(["confirmed", "inferred", "unknown", "record"]),
+    evidence: z.array(Evidence),
+    commit: z.string().describe("For 'record': the commit sha that records it; otherwise empty"),
+    searched: z.string().describe("For a claim that something is absent or never happens: what you searched; otherwise empty"),
+  })).describe("The answer, 1 to 5 short paragraphs"),
+  scene: z.array(z.object({
+    boxes: z.array(z.string()).describe("Box refs from the on-screen list, e.g. b3"),
+    links: z.array(z.object({ from: z.string(), to: z.string() })).describe("Links from the on-screen list to animate, by box ref"),
+    caption: z.string().describe("One short line (under 14 words) said while these light up"),
+  })).describe("2 to 6 steps that show the answer on the canvas, in order. Empty if the boxes on screen can't show it"),
+});
+export type Answer = z.infer<typeof AnswerSchema>;

@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { Hono } from "hono";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { AnalysisService, analysisRoutes } from "./features/analysis/index.ts";
+import { askRoutes } from "./features/ask/index.ts";
 import { GraphIndex, graphRoutes } from "./features/graph/index.ts";
 import { RepoService, repoRoutes } from "./features/repo/index.ts";
 import { sourceRoutes } from "./features/source/index.ts";
@@ -21,6 +22,7 @@ function repoApp(repo: RepoService): Hono {
   app.route("/api", graphRoutes(() => index));
   app.route("/api", sourceRoutes(repo.root, () => repo.facts));
   app.route("/api", analysisRoutes(new AnalysisService(repo)));
+  app.route("/api", askRoutes(repo, () => index));
   return app;
 }
 

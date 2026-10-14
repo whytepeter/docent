@@ -156,6 +156,8 @@ export interface Health {
   missingPaths: { doc: string; line: number; text: string; kind: "doc" | "agent"; missingKind: "path" | "name"; removedIn?: { sha: string; subject: string } }[];
   unreferenced: { file: string; reason: string }[];
   inferred: { from: string; to: string; file: string; line: number; via?: string }[];
+  /** Functions copied across files: "exact" (confirmed) or the same code with names changed (inferred). */
+  duplicates: { kind: "exact" | "shape"; confidence: "confirmed" | "inferred" | "unknown"; lines: number; members: { symbol: string; file: string; start: number; end: number }[] }[];
 }
 
 /** What the feature verifications found, gathered across features for the health report. */
@@ -168,6 +170,29 @@ export interface AnalysisHealth {
   /** Features whose code changed since they were verified. */
   stale: { featureId: string; feature: string }[];
 }
+
+/** A question asked from a view, with what the canvas shows. */
+export interface AskRequest {
+  route: Route;
+  question: string;
+  boxes: { id: string; title: string; sub?: string }[];
+  links: { from: string; to: string; label?: string }[];
+  history: { question: string; answer: string }[];
+}
+
+export type AskClaim = FeatureAnalysis["claims"][number];
+
+export interface AskAnswer {
+  paragraphs: AskClaim[];
+  scene: { nodes: string[]; edges: { from: string; to: string }[]; caption: string }[];
+  model: string;
+}
+
+/** Streamed while an answer is made: what Docent is doing, then the answer or an error. */
+export type AskEvent =
+  | { type: "stage"; stage: "reading" | "answering" | "checking" }
+  | { type: "answer"; answer: AskAnswer }
+  | { type: "error"; error: string };
 
 export interface RecentRepo {
   root: string;

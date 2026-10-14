@@ -1,5 +1,6 @@
 import { basename, resolve } from "node:path";
 import { git, isGitRepo, listFiles } from "./repo.ts";
+import { findDuplicates } from "./duplicates.ts";
 import { readDocs, readHistory, readStackAndEntries, scanSource } from "./signals.ts";
 import { buildGraph, loadProject } from "./ts-graph.ts";
 import type { Facts } from "./types.ts";
@@ -8,6 +9,7 @@ export type * from "./types.ts";
 export { connections, findSymbols } from "./query.ts";
 export { loadCachedFacts, repoCacheDir, saveFacts } from "./cache.ts";
 export { git } from "./repo.ts";
+export { findDuplicates } from "./duplicates.ts";
 
 const TS_LANGS = new Set(["ts", "tsx", "js", "jsx"]);
 
@@ -42,6 +44,7 @@ export function extract(repoPath: string, { onStage = () => {} }: ExtractOptions
   const docs = readDocs(root, files, graph.symbols);
   const { env, markers } = scanSource(root, files);
   const { stack, entries } = readStackAndEntries(root, files);
+  const duplicates = findDuplicates(root, files, graph.symbols);
 
   const externals = new Map<string, Set<string>>();
   for (const imp of graph.imports) {
@@ -80,6 +83,7 @@ export function extract(repoPath: string, { onStage = () => {} }: ExtractOptions
     externals: [...externals].map(([name, set]) => ({ name, files: [...set].sort() })).sort((a, b) => b.files.length - a.files.length),
     markers,
     unreferenced,
+    duplicates,
     warnings,
   };
 }

@@ -1,5 +1,5 @@
 import {
-  ArrowClockwise, CaretRight, FolderOpen, SidebarSimple as SidebarLeft, Cube, FileCode, Function as FnIcon, MagnifyingGlass, SidebarSimple, SquaresFour, TreeStructure, WarningCircle, X,
+  ArrowClockwise, CaretRight, ChatCircleDots, FolderOpen, Play, Stop, ArrowUp, SidebarSimple as SidebarLeft, Cube, FileCode, Function as FnIcon, MagnifyingGlass, SidebarSimple, SquaresFour, TreeStructure, WarningCircle, X,
   type Icon as PhosphorIcon,
 } from "@phosphor-icons/react";
 
@@ -18,6 +18,10 @@ const ICONS = {
   component: Cube,
   system: TreeStructure,
   folder: FolderOpen,
+  ask: ChatCircleDots,
+  play: Play,
+  stop: Stop,
+  send: ArrowUp,
 } satisfies Record<string, PhosphorIcon>;
 
 export type IconName = keyof typeof ICONS;

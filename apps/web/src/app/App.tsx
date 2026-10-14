@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useState } from "react";
 import type { Route } from "@docent/contracts";
 import { AreaCanvas, AreaInspector } from "../features/area-view/index.ts";
+import { AskPanel } from "../features/ask/index.ts";
 import { CodeSheet } from "../features/code/index.ts";
 import { FileCanvas, FileInspector } from "../features/file-view/index.ts";
 import { Freshness } from "../features/freshness/index.ts";
@@ -45,6 +46,7 @@ export function App() {
   const route = useRoute();
   const workspace = useQuery("workspace", api.workspace);
   const [switching, setSwitching] = useState(false);
+  const [asking, setAsking] = useState(false);
   const { data: overview, error } = useOverview();
   const { open } = useStore(inspectorStore);
   const sidebarOpen = useStore(sidebarStore);
@@ -86,6 +88,7 @@ export function App() {
         inspectorStore.set((s) => ({ ...s, open: !anyOpen }));
       } else if (!e.metaKey && !e.ctrlKey && !e.altKey && e.key === "[") toggleSidebar();
       else if (!e.metaKey && !e.ctrlKey && !e.altKey && e.key === "]") toggleDetails();
+      else if (!e.metaKey && !e.ctrlKey && !e.altKey && e.key === "/") (e.preventDefault(), setAsking((v) => !v));
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -120,6 +123,9 @@ export function App() {
       </div>
 
       <div className="float corner">
+        <button className="tbtn" aria-pressed={asking} title="Ask Docent ( / )" onClick={() => setAsking((v) => !v)}>
+          <Icon name="ask" />
+        </button>
         <Freshness />
         <HealthButton />
         {inspector && (
@@ -135,7 +141,7 @@ export function App() {
         </aside>
       )}
 
-      <JobPill />
+      {asking && route.view !== "review" ? <AskPanel route={route} onClose={() => setAsking(false)} /> : <JobPill />}
       <CodeSheet />
       <SearchPalette />
       {switching && <OpenRepo workspace={workspace.data} onClose={() => setSwitching(false)} />}

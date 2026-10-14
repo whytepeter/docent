@@ -168,7 +168,7 @@ async function verify(repo: string, only?: string) {
       saveAnalysis(root, r);
       const confirmed = r.claims.filter((c) => c.label === "confirmed").length;
       const demoted = r.claims.filter((c) => c.claimedLabel).length;
-      console.log(`  \x1b[32m✓\x1b[0m ${bold(id)} ${dim(`${r.status} · ${r.claims.length} claims (${confirmed} confirmed, ${demoted} demoted by the check) · ${r.issues.length} issues`)}`);
+      console.log(`  \x1b[32m✓\x1b[0m ${bold(id)} ${dim(`${r.status} · ${r.claims.length} claims (${confirmed} confirmed, ${demoted} taken back by the check or second reader) · ${r.issues.length} issues`)}`);
     },
   });
 }

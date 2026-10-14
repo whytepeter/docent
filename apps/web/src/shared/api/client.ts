@@ -1,4 +1,4 @@
-import type { AnalysisHealth, AreaView, Feature, FeatureDetail, FeaturesState, FileView, Health, Job, Overview, SearchHit, SourceSlice, Status, SymbolView, TreeNode, Workspace, PartOf } from "@docent/contracts";
+import type { AnalysisHealth, AskEvent, AskRequest, AreaView, Feature, FeatureDetail, FeaturesState, FileView, Health, Job, Overview, SearchHit, SourceSlice, Status, SymbolView, TreeNode, Workspace, PartOf } from "@docent/contracts";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   // The server refuses state changes without this header, which other sites can't send.
@@ -9,9 +9,33 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 const q = encodeURIComponent;
 
+/** Posts a question and calls back with each server-sent event until the answer (or an error) arrives. */
+async function ask(req: AskRequest, onEvent: (e: AskEvent) => void, signal?: AbortSignal): Promise<void> {
+  const res = await fetch("/api/ask", { method: "POST", headers: { "content-type": "application/json", "x-docent": "1" }, body: JSON.stringify(req), signal });
+  if (!res.ok || !res.body) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error((body as { error?: string }).error ?? res.statusText);
+  }
+  const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+  let buffer = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += value;
+    let cut: number;
+    while ((cut = buffer.indexOf("\n\n")) >= 0) {
+      const chunk = buffer.slice(0, cut);
+      buffer = buffer.slice(cut + 2);
+      const data = chunk.split("\n").filter((l) => l.startsWith("data:")).map((l) => l.slice(5).trim()).join("\n");
+      if (data) onEvent(JSON.parse(data) as AskEvent);
+    }
+  }
+}
+
 const json = (body: unknown): RequestInit => ({ method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
 
 export const api = {
+  ask,
   workspace: () => request<Workspace>("/api/workspace"),
   openRepo: (path: string) => request<Workspace>("/api/workspace/open", json({ path })),
   pickFolder: () => request<{ path: string | null }>("/api/workspace/pick", { method: "POST" }),

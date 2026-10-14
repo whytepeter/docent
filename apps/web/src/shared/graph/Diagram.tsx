@@ -9,6 +9,7 @@ import { easeInOutCubic, easeOutQuint, reducedMotion } from "./motion.ts";
 import type { DiagramEdge, DiagramNode, DiagramSection } from "./types.ts";
 import { insets, inspectorVisible, sidebarStore } from "../state/chrome.ts";
 import { entryDirection } from "../state/router.ts";
+import { canvasStore, sceneStore } from "../state/scene.ts";
 import { useStore } from "../state/store.ts";
 import "./flow.css";
 
@@ -141,12 +142,57 @@ function FlowInner({ nodes, edges, label, sections = [], edgeShape = "curve", fl
     setTimeout(then, 250);
   }, [getNode, getZoom, setCenter]);
 
+  // Tell the rest of the app what's on screen, so a question can point at these boxes.
+  useEffect(() => {
+    canvasStore.set({
+      boxes: nodes.filter((n) => n.tone !== "ghost").map((n) => ({ id: n.id, title: n.title, ...(n.sub ?? n.kicker ? { sub: n.sub ?? n.kicker } : {}) })),
+      links: edges.map((e) => ({ from: e.from, to: e.to, ...(e.label ? { label: e.label } : {}) })),
+    });
+    return () => canvasStore.set({ boxes: [], links: [] });
+  }, [nodes, edges]);
+
+  // A playing scene lights its boxes and links, and the camera glides to them; stopping glides back.
+  const scene = useStore(sceneStore);
+  const step = scene?.steps[scene.index] ?? null;
+  const sceneLit = useMemo(() => {
+    if (!step) return null;
+    const set = new Set(step.nodes);
+    for (const e of step.edges) set.add(e.from).add(e.to);
+    return set;
+  }, [step]);
+  const sceneEdges = useMemo(() => {
+    if (!step || !sceneLit) return null;
+    const explicit = new Set(step.edges.map((e) => `${e.from}>${e.to}`));
+    return new Set(edges.filter((e) => explicit.has(`${e.from}>${e.to}`) || explicit.has(`${e.to}>${e.from}`) || (sceneLit.has(e.from) && sceneLit.has(e.to))).map((e) => e.id));
+  }, [step, sceneLit, edges]);
+  const wasPlaying = useRef(false);
+  useEffect(() => {
+    const el = box.current;
+    if (!settled.current || !el) return;
+    if (!sceneLit) {
+      if (wasPlaying.current) setViewport(target(), { duration: 520, ease: easeOutQuint, interpolate: "smooth" });
+      wasPlaying.current = false;
+      return;
+    }
+    wasPlaying.current = true;
+    const lit = nodes.filter((n) => sceneLit.has(n.id));
+    if (!lit.length) return;
+    const minX = Math.min(...lit.map((n) => n.x));
+    const minY = Math.min(...lit.map((n) => n.y));
+    const maxX = Math.max(...lit.map((n) => n.x + n.w));
+    const maxY = Math.max(...lit.map((n) => n.y + n.h));
+    const pad = JSON.parse(paddingKey) as Record<"top" | "bottom" | "left" | "right", string>;
+    const fit = getViewportForBounds({ x: minX, y: minY, width: maxX - minX, height: maxY - minY }, el.clientWidth, el.clientHeight, 0.3, 1.25, pad as never);
+    setViewport(fit, { duration: reducedMotion() ? 0 : 700, ease: easeInOutCubic, interpolate: "smooth" });
+  }, [sceneLit, nodes, paddingKey, setViewport, target]);
+
   const linked = useMemo(() => {
+    if (sceneLit) return sceneLit;
     if (!hover) return null;
     const set = new Set([hover]);
     for (const e of edges) if (e.from === hover || e.to === hover) set.add(e.from).add(e.to);
     return set;
-  }, [hover, edges]);
+  }, [hover, edges, sceneLit]);
 
   const rfNodes = useMemo<Node[]>(() => [
     ...sections.map((s): SectionNodeType => ({
@@ -160,16 +206,17 @@ function FlowInner({ nodes, edges, label, sections = [], edgeShape = "curve", fl
       position: { x: n.x, y: n.y },
       width: n.w,
       height: n.h,
-      data: { ...n, lit: !!linked?.has(n.id) && linked.size > 1, dim: !!linked && !linked.has(n.id) },
+      data: { ...n, lit: !!linked?.has(n.id) && (linked.size > 1 || !!sceneLit), dim: !!linked && !linked.has(n.id) },
       draggable: false,
       selectable: false,
       focusable: !!n.onClick,
       ariaLabel: n.title,
     })),
-  ], [nodes, sections, linked]);
+  ], [nodes, sections, linked, sceneLit]);
 
   const rfEdges = useMemo<FlowEdgeType[]>(() => edges.map((e) => {
-    const on = !!hover && (e.from === hover || e.to === hover);
+    const on = sceneEdges ? sceneEdges.has(e.id) : !!hover && (e.from === hover || e.to === hover);
+    const quiet = sceneEdges ? !on : !!hover && !on;
     const color = on ? "var(--accent)" : e.tone === "inferred" ? "var(--amber-dot)" : "var(--edge-strong)";
     return {
       id: e.id,
@@ -178,13 +225,13 @@ function FlowInner({ nodes, edges, label, sections = [], edgeShape = "curve", fl
       ...(e.vertical ? { sourceHandle: "b", targetHandle: "t" } : {}),
       type: "flow",
       hidden: quietEdges && !on,
-      className: `flow-edge${e.tone === "inferred" ? " inferred" : ""}${on ? " on" : ""}${hover && !on ? " faded" : ""}`,
+      className: `flow-edge${e.tone === "inferred" ? " inferred" : ""}${on ? " on" : ""}${quiet ? " faded" : ""}`,
       markerEnd: { type: MarkerType.ArrowClosed, width: 13, height: 13, color },
       style: e.width ? { strokeWidth: e.width } : undefined,
       data: { shape: edgeShape, dots: flowing || on, label: e.label, showLabel: edgeLabels || on },
       focusable: false,
     };
-  }), [edges, hover, quietEdges, edgeShape, flowing, edgeLabels]);
+  }), [edges, hover, sceneEdges, quietEdges, edgeShape, flowing, edgeLabels]);
 
   const onEnter: NodeMouseHandler = useCallback((_, n) => n.type === "card" && setHover(n.id), []);
   const onLeave: NodeMouseHandler = useCallback(() => setHover(null), []);

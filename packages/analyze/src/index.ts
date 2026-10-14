@@ -1,3 +1,4 @@
+export { answerQuestion, type AskBox, type AskInput, type CheckedAnswer } from "./ask.ts";
 export { discoverFeatures, validateDiscovery } from "./discover.ts";
 export { filesHash, verifyAll, verifyFeature } from "./verify.ts";
 export { makeChecker } from "./citations.ts";
