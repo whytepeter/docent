@@ -2,7 +2,8 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { connections, extract, findSymbols, type EdgeFact, type Facts } from "@docent/extract";
 import { execFile } from "node:child_process";
 import { statSync } from "node:fs";
@@ -18,6 +19,7 @@ const USAGE = `docent — guided tours of a codebase
   docent discover <repo>         ask Claude to propose the feature map (you review it next)
   docent features <repo>         show the feature map
   docent approve <repo>          freeze the feature map as reviewed
+  docent episode <repo> <id>     write the narrated episode for a verified feature
   docent verify <repo> [id]      verify features not yet verified (or one, again) with checked evidence
 
 Facts are cached in ~/.docent/repos/.`;
@@ -143,6 +145,25 @@ function printFeatures(map: import("@docent/analyze").FeatureMap) {
   if (map.notes.length) console.log(dim(`  ${map.notes.length} fixes by the mechanical check (first: ${map.notes[0]})`));
 }
 
+async function episode(repo: string, id: string) {
+  const { loadAnalysis, loadFeatureMap, saveEpisode, writeEpisode } = await import("@docent/analyze");
+  const { pickProvider } = await import("@docent/llm");
+  const root = resolve(repo);
+  const feature = loadFeatureMap(root)?.features.find((f) => f.id === id);
+  if (!feature) throw new Error(`No feature ${id}`);
+  const analysis = loadAnalysis(root, id);
+  if (!analysis) throw new Error(`Verify it first: docent verify ${repo} ${id}`);
+  const llm = pickProvider();
+  console.log(dim(`  ${llm.describe()} · writing the episode for ${feature.name}`));
+  const started = Date.now();
+  const e = await writeEpisode(llm, load(repo), root, feature, analysis);
+  saveEpisode(root, e);
+  const claims = [...e.scenes.flatMap((s) => s.steps.flatMap((st) => [st.claim, ...(st.predict ? [st.predict.reveal] : [])])), ...e.selfCheck.map((q) => q.answer)];
+  const steps = e.scenes.reduce((n, s) => n + s.steps.length, 0);
+  console.log(`  ${bold(e.title)} ${dim(`· ${e.scenes.length} scenes, ${steps} steps, ${e.cast.length} boxes · ${claims.filter((c) => c.label === "confirmed").length} of ${claims.length} claims confirmed, ${claims.filter((c) => c.claimedLabel).length} taken back · ${((Date.now() - started) / 1000).toFixed(0)}s`)}`);
+  if (e.notes.length) console.log(dim(`  clean-up: ${e.notes.join("; ")}`));
+}
+
 async function verify(repo: string, only?: string) {
   const { filesHash, loadAnalysis, loadFeatureMap, saveAnalysis, verifyAll } = await import("@docent/analyze");
   const { pickProvider } = await import("@docent/llm");
@@ -190,6 +211,10 @@ const isDir = (p: string | undefined) => {
   }
 };
 
+// Keys (CARTESIA_API_KEY, ANTHROPIC_API_KEY…) from Docent's own .env, if there is one. Never the analyzed repo's.
+const envFile = join(dirname(fileURLToPath(import.meta.url)), "../../../.env");
+if (existsSync(envFile)) process.loadEnvFile(envFile);
+
 const [cmd, repo, name] = process.argv.slice(2);
 try {
   if (!cmd) await openApp();
@@ -209,6 +234,7 @@ try {
     saveFeatureMap(resolve(repo), { ...map, state: "approved", approvedAt: new Date().toISOString() });
     console.log("  Feature map approved and frozen.");
   } else if (cmd === "verify" && repo) await verify(repo, name);
+  else if (cmd === "episode" && repo && name) await episode(repo, name);
   else if (cmd === "extract" && repo) run(repo);
   else if (cmd === "stats" && repo) printStats(load(repo));
   else if (cmd === "fn" && repo && name) printFn(load(repo), name);

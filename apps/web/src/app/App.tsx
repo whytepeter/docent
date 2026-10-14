@@ -2,6 +2,8 @@ import { Fragment, useEffect, useState } from "react";
 import type { Route } from "@docent/contracts";
 import { AreaCanvas, AreaInspector } from "../features/area-view/index.ts";
 import { AskPanel } from "../features/ask/index.ts";
+import { SettingsPanel } from "../features/settings/index.ts";
+import { EpisodeCanvas, EpisodeInspector, ResumeEpisode } from "../features/episode/index.ts";
 import { CodeSheet } from "../features/code/index.ts";
 import { FileCanvas, FileInspector } from "../features/file-view/index.ts";
 import { Freshness } from "../features/freshness/index.ts";
@@ -16,7 +18,7 @@ import { SystemCanvas, useOverview } from "../features/system-map/index.ts";
 import { OpenRepo } from "../features/workspace/index.ts";
 import { api } from "../shared/api/client.ts";
 import { useQuery } from "../shared/api/useQuery.ts";
-import { insets, inspectorVisible, sidebarStore } from "../shared/state/chrome.ts";
+import { clampInspector, insets, inspectorVisible, inspectorWidth, PANEL, sidebarStore } from "../shared/state/chrome.ts";
 import { headerStore } from "../shared/state/header.ts";
 import { inspectorStore } from "../shared/state/inspector.ts";
 import { navigate, useRoute } from "../shared/state/router.ts";
@@ -31,6 +33,7 @@ function views(route: Route) {
     case "area": return { canvas: <AreaCanvas id={route.id} />, inspector: <AreaInspector id={route.id} /> };
     case "feature": return { canvas: <FeatureCanvas id={route.id} />, inspector: <FeatureInspector id={route.id} /> };
     case "review": return { canvas: <ReviewCanvas />, inspector: <ReviewPanel /> };
+    case "episode": return { canvas: <EpisodeCanvas id={route.id} />, inspector: <EpisodeInspector id={route.id} /> };
     default: return { canvas: <SystemCanvas />, inspector: null };
   }
 }
@@ -47,6 +50,7 @@ export function App() {
   const workspace = useQuery("workspace", api.workspace);
   const [switching, setSwitching] = useState(false);
   const [asking, setAsking] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const { data: overview, error } = useOverview();
   const { open } = useStore(inspectorStore);
   const sidebarOpen = useStore(sidebarStore);
@@ -54,7 +58,9 @@ export function App() {
   const { canvas, inspector } = views(route);
   const key = JSON.stringify(route);
   const detailsShown = open && !!inspector;
-  const inset = insets(sidebarOpen, detailsShown);
+  const panelWidth = useStore(inspectorWidth);
+  const [resizing, setResizing] = useState(false);
+  const inset = insets(sidebarOpen, detailsShown, panelWidth);
 
   useEffect(() => inspectorVisible.set(detailsShown), [detailsShown]);
 
@@ -127,6 +133,9 @@ export function App() {
           <Icon name="ask" />
         </button>
         <Freshness />
+        <button className="tbtn" aria-pressed={settingsOpen} title="Settings" aria-label="Settings" onClick={() => setSettingsOpen(true)}>
+          <Icon name="settings" />
+        </button>
         <HealthButton />
         {inspector && (
           <button className="tbtn" aria-pressed={open} title="Details ( ] )" onClick={toggleDetails}>
@@ -136,14 +145,43 @@ export function App() {
       </div>
 
       {inspector && (
-        <aside className={`float details${detailsShown ? " shown" : ""}`} aria-label="Details" aria-hidden={!detailsShown}>
+        <aside className={`float details${detailsShown ? " shown" : ""}${resizing ? " resizing" : ""}`} style={{ width: panelWidth }} aria-label="Details" aria-hidden={!detailsShown}>
+          <div
+            className="details-resize"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize the details panel"
+            aria-valuenow={panelWidth}
+            tabIndex={0}
+            title="Drag to resize · double-click to reset"
+            onDoubleClick={() => inspectorWidth.set(PANEL.inspector)}
+            onKeyDown={(e) => {
+              if (e.key === "ArrowLeft") inspectorWidth.set((w) => clampInspector(w + 24));
+              if (e.key === "ArrowRight") inspectorWidth.set((w) => clampInspector(w - 24));
+            }}
+            onPointerDown={(e) => {
+              e.preventDefault();
+              const right = window.innerWidth - PANEL.gap;
+              setResizing(true);
+              const move = (m: PointerEvent) => inspectorWidth.set(clampInspector(right - m.clientX));
+              const up = () => {
+                setResizing(false);
+                window.removeEventListener("pointermove", move);
+                window.removeEventListener("pointerup", up);
+              };
+              window.addEventListener("pointermove", move);
+              window.addEventListener("pointerup", up);
+            }}
+          />
           <div className="details-in" key={key}>{inspector}</div>
         </aside>
       )}
 
-      {asking && route.view !== "review" ? <AskPanel route={route} onClose={() => setAsking(false)} /> : <JobPill />}
+      {asking && route.view !== "review" && route.view !== "episode" ? <AskPanel route={route} onClose={() => setAsking(false)} /> : route.view !== "episode" && <JobPill />}
+      {!asking && <ResumeEpisode onEpisode={route.view === "episode"} />}
       <CodeSheet />
       <SearchPalette />
+      {settingsOpen && <SettingsPanel onClose={() => setSettingsOpen(false)} />}
       {switching && <OpenRepo workspace={workspace.data} onClose={() => setSwitching(false)} />}
     </div>
   );

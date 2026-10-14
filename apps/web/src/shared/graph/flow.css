@@ -91,3 +91,6 @@
 .flow .react-flow__attribution { background: transparent; color: var(--ink-3); opacity: .6; font-size: 9px; }
 .flow .react-flow__attribution a { color: inherit; }
 @media (prefers-reduced-motion: reduce) { .flow-dots { display: none; } }
+.packet rect { fill: var(--accent); filter: drop-shadow(0 2px 6px color-mix(in srgb, var(--accent) 35%, transparent)); }
+.packet text { fill: var(--on-accent); font: 600 12.5px var(--sans); }
+.packet.bad rect { fill: var(--brick-dot); filter: drop-shadow(0 2px 6px color-mix(in srgb, var(--brick-dot) 35%, transparent)); }

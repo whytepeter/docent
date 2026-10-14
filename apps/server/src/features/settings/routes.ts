@@ -1,0 +1,97 @@
+import { Hono } from "hono";
+import type { Settings, VoiceClip, VoiceOption, VoiceStatus } from "@docent/contracts";
+import { pickProvider, readConfig, writeConfig } from "@docent/llm";
+import { adapterFor, clipAudio, KEY_ENV, pickVoice, PROVIDERS, setVoiceSettings, speak, testKey, voiceSettings, type ProviderId } from "@docent/voice";
+import { hint, setEnvVar } from "./env.ts";
+
+const SAMPLE = "This part is solid. This part I wouldn't trust, and here's why.";
+
+function settings(): Settings {
+  const v = voiceSettings();
+  let claude = "unavailable";
+  try {
+    claude = pickProvider().describe();
+  } catch (e) {
+    claude = (e as Error).message;
+  }
+  return {
+    voice: {
+      provider: v.provider,
+      voices: v.voices,
+      speed: v.speed,
+      expressive: v.expressive,
+      keys: Object.fromEntries(PROVIDERS.map((p) => [p, hint(process.env[KEY_ENV[p]])])) as Record<ProviderId, string | null>,
+    },
+    claude: { mode: readConfig().provider === "api" ? "api" : "claude-code", describe: claude, apiKey: hint(process.env.ANTHROPIC_API_KEY) },
+  };
+}
+
+const isProvider = (p: unknown): p is ProviderId => typeof p === "string" && (PROVIDERS as readonly string[]).includes(p);
+
+/**
+ * Settings: API keys and the narrator. Keys are write-only from the page's point of view: they go to
+ * Docent's .env (gitignored) and this process, and only a masked hint ever comes back.
+ */
+export function settingsRoutes(): Hono {
+  return new Hono()
+    .get("/settings", (c) => c.json<Settings>(settings()))
+    .get("/voice", (c) => {
+      const v = pickVoice();
+      return c.json<VoiceStatus>("reason" in v ? { available: false, reason: v.reason } : { available: true, provider: v.adapter.id });
+    })
+    .get("/voice/:file", (c) => {
+      const audio = clipAudio(c.req.param("file").replace(/\.wav$/, ""));
+      if (!audio) return c.json({ error: "No such clip" }, 404);
+      return c.body(audio as Uint8Array<ArrayBuffer>, 200, { "Content-Type": "audio/wav", "Cache-Control": "private, max-age=31536000, immutable" });
+    })
+    .put("/settings/keys", async (c) => {
+      const body = (await c.req.json().catch(() => ({}))) as { provider?: string; key?: string | null };
+      const key = typeof body.key === "string" ? body.key.trim() : null;
+      if (body.provider === "anthropic") {
+        setEnvVar("ANTHROPIC_API_KEY", key || null);
+        return c.json<Settings>(settings());
+      }
+      if (!isProvider(body.provider)) return c.json({ error: "Unknown provider" }, 400);
+      if (key) {
+        // A key that can list voices may still be refused for speech, so a voice key is tested by speaking.
+        const voice = voiceSettings().voices[body.provider];
+        const test = await testKey(body.provider, key, voice);
+        if (!test.ok) return c.json({ error: `That key didn't work: ${test.reason}` }, 400);
+      }
+      setEnvVar(KEY_ENV[body.provider], key || null);
+      return c.json<Settings>(settings());
+    })
+    .put("/settings/voice", async (c) => {
+      const body = (await c.req.json().catch(() => ({}))) as { provider?: string; voice?: string; speed?: number; expressive?: boolean };
+      if (body.provider !== undefined && !isProvider(body.provider)) return c.json({ error: "Unknown provider" }, 400);
+      setVoiceSettings({
+        ...(isProvider(body.provider) ? { provider: body.provider } : {}),
+        ...(typeof body.voice === "string" && body.voice ? { voice: body.voice } : {}),
+        ...(typeof body.speed === "number" ? { speed: body.speed } : {}),
+        ...(typeof body.expressive === "boolean" ? { expressive: body.expressive } : {}),
+      });
+      return c.json<Settings>(settings());
+    })
+    .put("/settings/claude", async (c) => {
+      const { mode } = (await c.req.json().catch(() => ({}))) as { mode?: string };
+      if (mode !== "api" && mode !== "claude-code") return c.json({ error: "Unknown mode" }, 400);
+      writeConfig({ ...readConfig(), provider: mode });
+      return c.json<Settings>(settings());
+    })
+    .get("/settings/voices", async (c) => {
+      const provider = c.req.query("provider");
+      if (!isProvider(provider)) return c.json({ error: "Unknown provider" }, 400);
+      const adapter = adapterFor(provider);
+      if (!adapter?.listVoices) return c.json({ error: "Add this provider's API key first" }, 409);
+      return c.json<VoiceOption[]>(await adapter.listVoices({ query: c.req.query("q") ?? "" }));
+    })
+    .post("/settings/voices/preview", async (c) => {
+      const { provider, voice } = (await c.req.json().catch(() => ({}))) as { provider?: string; voice?: string };
+      if (!isProvider(provider) || !voice) return c.json({ error: "Pick a voice" }, 400);
+      const adapter = adapterFor(provider);
+      if (!adapter) return c.json({ error: "Add this provider's API key first" }, 409);
+      const v = voiceSettings();
+      const clip = await speak(adapter, voice, SAMPLE, { speed: v.speed, ...(v.expressive ? { tone: "warm" as const } : {}) });
+      return c.json<VoiceClip>({ ...clip, url: `/api/voice/${clip.hash}.wav` });
+    });
+}

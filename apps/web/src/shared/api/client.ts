@@ -1,4 +1,4 @@
-import type { AnalysisHealth, AskEvent, AskRequest, AreaView, Feature, FeatureDetail, FeaturesState, FileView, Health, Job, Overview, SearchHit, SourceSlice, Status, SymbolView, TreeNode, Workspace, PartOf } from "@docent/contracts";
+import type { AnalysisHealth, AskEvent, AskRequest, AreaView, EpisodeState, Settings, VoiceClip, VoiceOption, VoiceProvider, VoiceStatus, Feature, FeatureDetail, FeaturesState, FileView, Health, Job, Overview, SearchHit, SourceSlice, Status, SymbolView, TreeNode, Workspace, PartOf } from "@docent/contracts";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   // The server refuses state changes without this header, which other sites can't send.
@@ -54,6 +54,16 @@ export const api = {
   features: () => request<FeaturesState>("/api/features"),
   feature: (id: string) => request<FeatureDetail>(`/api/features/${q(id)}`),
   partOf: (file: string, symbol?: string) => request<PartOf>(`/api/part-of?file=${q(file)}${symbol ? `&symbol=${q(symbol)}` : ""}`),
+  episode: (id: string) => request<EpisodeState>(`/api/episodes/${q(id)}`),
+  writeEpisode: (id: string) => request<Job>(`/api/episodes/${q(id)}/write`, { method: "POST" }),
+  settings: () => request<Settings>("/api/settings"),
+  setKey: (provider: VoiceProvider | "anthropic", key: string | null) => request<Settings>("/api/settings/keys", { ...json({ provider, key }), method: "PUT" }),
+  setVoice: (patch: { provider?: VoiceProvider; voice?: string; speed?: number; expressive?: boolean }) => request<Settings>("/api/settings/voice", { ...json(patch), method: "PUT" }),
+  setClaude: (mode: "claude-code" | "api") => request<Settings>("/api/settings/claude", { ...json({ mode }), method: "PUT" }),
+  voices: (provider: VoiceProvider, q: string) => request<VoiceOption[]>(`/api/settings/voices?provider=${provider}&q=${q ? encodeURIComponent(q) : ""}`),
+  previewVoice: (provider: VoiceProvider, voice: string) => request<VoiceClip>("/api/settings/voices/preview", json({ provider, voice })),
+  voice: () => request<VoiceStatus>("/api/voice"),
+  voiceClip: (id: string, at: number) => request<VoiceClip>(`/api/episodes/${q(id)}/voice`, json({ at })),
   cancelJob: () => request<Job | null>("/api/features/cancel", { method: "POST" }),
   discover: () => request<Job>("/api/features/discover", { method: "POST" }),
   verify: (id?: string) => request<Job>("/api/features/verify", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(id ? { id } : {}) }),

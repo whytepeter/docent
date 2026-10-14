@@ -4,6 +4,11 @@ node_modules/
 .DS_Store
 dist/
 
+# Local secrets (API keys). See .env.example.
+.env
+.env.*
+!.env.example
+
 # OpenWolf per-session state
 .wolf/hooks/
 .wolf/cache/

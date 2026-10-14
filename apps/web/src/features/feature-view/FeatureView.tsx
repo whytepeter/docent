@@ -6,7 +6,7 @@ import { useQuery } from "../../shared/api/useQuery.ts";
 import { cardHeight, Diagram, hueFromPath, type DiagramEdge, type DiagramNode, type DiagramSection } from "../../shared/graph/index.ts";
 import { headerStore } from "../../shared/state/header.ts";
 import { navigate } from "../../shared/state/router.ts";
-import { Group, shortPath } from "../../shared/ui/index.ts";
+import { Group, Icon, shortPath } from "../../shared/ui/index.ts";
 import { openCode } from "../code/index.ts";
 import "./feature.css";
 
@@ -130,6 +130,7 @@ export function FeatureInspector({ id }: { id: string }) {
       </div>
       {analysis ? (
         <>
+          <button className="watch" onClick={() => navigate({ view: "episode", id })}><Icon name="play" size={13} weight="bold" />Watch the episode</button>
           <div className="analogy"><b>Think of it like this.</b> {analysis.analogy}</div>
           <p className="status-reason">{analysis.statusReason}</p>
           <Group title="What must stay true" count={by("invariant").length} open><Claims claims={by("invariant")} /></Group>

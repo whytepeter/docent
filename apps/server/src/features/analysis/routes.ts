@@ -5,6 +5,11 @@ import type { AnalysisService } from "./service.ts";
 export function analysisRoutes(svc: AnalysisService): Hono {
   return new Hono()
     .get("/features", (c) => c.json(svc.state()))
+    .get("/episodes/:id", (c) => {
+      const e = svc.episode(c.req.param("id"));
+      return e ? c.json(e) : c.json({ error: "No such feature" }, 404);
+    })
+    .post("/episodes/:id/write", (c) => c.json(svc.startEpisode(c.req.param("id"))))
     .get("/features/health", (c) => c.json(svc.health()))
     .get("/part-of", (c) => c.json(svc.partOf(c.req.query("file") ?? "", c.req.query("symbol") || undefined)))
     .get("/features/:id", (c) => {

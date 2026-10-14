@@ -1,8 +1,8 @@
 import {
-  discoverFeatures, filesHash, listAnalyses, loadAnalysis, loadFeatureMap, saveAnalysis, saveFeatureMap, verifyAll,
+  discoverFeatures, filesHash, listAnalyses, loadAnalysis, loadEpisode, loadFeatureMap, saveAnalysis, saveEpisode, saveFeatureMap, verifyAll, writeEpisode,
   type Feature, type FeatureMap,
 } from "@docent/analyze";
-import type { AnalysisHealth, FeatureCard, FeaturesState, Job, PartOf } from "@docent/contracts";
+import type { AnalysisHealth, EpisodeState, FeatureCard, FeaturesState, Job, PartOf } from "@docent/contracts";
 import { pickProvider } from "@docent/llm";
 import type { RepoService } from "../repo/index.ts";
 
@@ -66,6 +66,38 @@ export class AnalysisService {
     if (!feature) return null;
     const analysis = loadAnalysis(this.root, id);
     return { feature, analysis, stale: !!analysis && analysis.filesHash !== filesHash(this.repo.facts, feature.files) };
+  }
+
+  episode(id: string): EpisodeState | null {
+    const feature = loadFeatureMap(this.root)?.features.find((f) => f.id === id);
+    if (!feature) return null;
+    const episode = loadEpisode(this.root, id);
+    return { feature, episode, verified: !!loadAnalysis(this.root, id), stale: !!episode && episode.filesHash !== filesHash(this.repo.facts, feature.files) };
+  }
+
+  /** Writes a feature's episode in the background: the narration, scenes and claims, checked like verification. */
+  startEpisode(id: string): Job {
+    if (this.running()) return this.job!;
+    const feature = loadFeatureMap(this.root)?.features.find((f) => f.id === id);
+    const analysis = loadAnalysis(this.root, id);
+    if (!feature || !analysis) throw new Error("Verify the feature before writing its episode");
+    const abort = (this.abort = new AbortController());
+    const job: Job = { kind: "episode", startedAt: new Date().toISOString(), total: 1, done: [], failed: [], message: `Writing the episode for ${feature.name}` };
+    this.job = job;
+    void (async () => {
+      try {
+        saveEpisode(this.root, await writeEpisode(pickProvider(), this.repo.facts, this.root, feature, analysis, { signal: abort.signal }));
+        job.done.push(id);
+        job.message = "Episode ready";
+      } catch (e) {
+        if (abort.signal.aborted) return;
+        job.error = (e as Error).message;
+        job.message = "Couldn't write the episode";
+      } finally {
+        job.finishedAt ??= new Date().toISOString();
+      }
+    })();
+    return job;
   }
 
   /** Every verified feature's issues, doc mismatches and taken-back claims, in one list for the health report. */

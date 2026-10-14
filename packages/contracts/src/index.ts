@@ -3,9 +3,17 @@
  * nothing else crosses the boundary.
  */
 import type { Confidence, EdgeKind, FileFact, SymbolKind } from "@docent/extract";
-import type { Feature, FeatureAnalysis, FeatureMap } from "@docent/analyze";
+import type { Episode, Feature, FeatureAnalysis, FeatureMap } from "@docent/analyze";
 
-export type { Feature, FeatureAnalysis, FeatureMap };
+export type { Episode, Feature, FeatureAnalysis, FeatureMap };
+
+/** An episode and whether the feature's code changed since it was written. */
+export interface EpisodeState {
+  feature: Feature;
+  episode: Episode | null;
+  verified: boolean;
+  stale: boolean;
+}
 
 export type { Confidence, EdgeKind, SymbolKind };
 
@@ -16,7 +24,8 @@ export type Route =
   | { view: "review" }
   | { view: "area"; id: string }
   | { view: "file"; path: string }
-  | { view: "fn"; id: string };
+  | { view: "fn"; id: string }
+  | { view: "episode"; id: string };
 
 export interface Area {
   id: string;
@@ -194,6 +203,39 @@ export type AskEvent =
   | { type: "answer"; answer: AskAnswer }
   | { type: "error"; error: string };
 
+/** A voice to choose from in Settings. */
+export interface VoiceOption {
+  id: string;
+  name: string;
+  description?: string;
+  own: boolean;
+}
+
+export type VoiceProvider = "cartesia" | "fish-audio";
+
+/** Everything the Settings panel shows. Keys come back only as masked hints. */
+export interface Settings {
+  voice: {
+    provider: VoiceProvider;
+    voices: Partial<Record<VoiceProvider, string>>;
+    speed: number;
+    expressive: boolean;
+    keys: Record<VoiceProvider, string | null>;
+  };
+  claude: { mode: "claude-code" | "api"; describe: string; apiKey: string | null };
+}
+
+/** Whether narration can be heard, and if not, why. */
+export type VoiceStatus = { available: true; provider: string } | { available: false; reason: string };
+
+/** One spoken line: where to fetch it and when each word is said (seconds). */
+export interface VoiceClip {
+  hash: string;
+  url: string;
+  durationMs: number;
+  words: { word: string; start: number; end: number }[];
+}
+
 export interface RecentRepo {
   root: string;
   name: string;
@@ -233,6 +275,7 @@ export const routeToHash = (route: Route): string => {
     case "fn": return `#/fn/${encodeURIComponent(route.id)}`;
     case "feature": return `#/feature/${encodeURIComponent(route.id)}`;
     case "review": return "#/review";
+    case "episode": return `#/episode/${encodeURIComponent(route.id)}`;
   }
 };
 
@@ -244,12 +287,13 @@ export const hashToRoute = (hash: string): Route => {
   if (view === "fn" && value) return { view: "fn", id: value };
   if (view === "feature" && value) return { view: "feature", id: value };
   if (view === "review") return { view: "review" };
+  if (view === "episode" && value) return { view: "episode", id: value };
   return { view: "system" };
 };
 
 /** A background job (discovery or verification) and how far it got. */
 export interface Job {
-  kind: "discover" | "verify";
+  kind: "discover" | "verify" | "episode";
   startedAt: string;
   finishedAt?: string;
   total: number;

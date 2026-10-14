@@ -1,4 +1,5 @@
 import { memo } from "react";
+import { reducedMotion } from "./motion.ts";
 import { BaseEdge, EdgeLabelRenderer, getBezierPath, getSmoothStepPath, type Edge, type EdgeProps } from "@xyflow/react";
 
 export type FlowEdgeData = {
@@ -7,7 +8,13 @@ export type FlowEdgeData = {
   dots: boolean;
   label?: string;
   showLabel: boolean;
+  /** Labeled packets that travel the link once, then rest at the far end. `key` restarts them. */
+  packets?: { label: string; back: boolean; bad: boolean; delay: number; cycle: number }[];
+  packetKey?: number;
 };
+/** Seconds a packet takes to cross a link. */
+const TRAVEL = 1.3;
+
 export type FlowEdgeType = Edge<FlowEdgeData, "flow">;
 
 /**
@@ -32,6 +39,29 @@ export const FlowEdge = memo(function FlowEdge(props: EdgeProps<FlowEdgeType>) {
           ))}
         </g>
       )}
+      {data?.packets?.map((p, i) => {
+        const w = Math.max(48, p.label.length * 7.4 + 22);
+        // One loop of the whole step: wait for its turn, travel, fade, wait for the others. Reduced motion: rest at the far end.
+        const still = reducedMotion();
+        const t0 = p.delay / p.cycle;
+        const t1 = Math.min(0.97, (p.delay + TRAVEL) / p.cycle);
+        const there = p.back ? "0" : "1";
+        const from = p.back ? "1" : "0";
+        return (
+          <g key={`${data.packetKey}:${i}`} className={`packet${p.bad ? " bad" : ""}`} aria-hidden="true" opacity={still ? 1 : 0}>
+            <rect x={-w / 2} y={-12} width={w} height={24} rx={12} />
+            <text textAnchor="middle" dy="0.35em">{p.label}</text>
+            {still ? (
+              <animateMotion dur="0.01s" fill="freeze" path={path} keyPoints={`${there};${there}`} keyTimes="0;1" calcMode="linear" />
+            ) : (
+              <>
+                <animateMotion dur={`${p.cycle}s`} repeatCount="indefinite" path={path} keyPoints={`${from};${from};${there};${there}`} keyTimes={`0;${t0};${t1};1`} calcMode="spline" keySplines="0 0 1 1;0.45 0 0.3 1;0 0 1 1" />
+                <animate attributeName="opacity" dur={`${p.cycle}s`} repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes={`0;${t0};${t0 + 0.02};${t1 - 0.03};${t1};1`} />
+              </>
+            )}
+          </g>
+        );
+      })}
       {data?.label && data.showLabel && (
         <EdgeLabelRenderer>
           <div className="edge-label nodrag nopan" style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }}>

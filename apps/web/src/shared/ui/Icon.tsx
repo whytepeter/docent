@@ -1,5 +1,5 @@
 import {
-  ArrowClockwise, CaretRight, ChatCircleDots, FolderOpen, Play, Stop, ArrowUp, SidebarSimple as SidebarLeft, Cube, FileCode, Function as FnIcon, MagnifyingGlass, SidebarSimple, SquaresFour, TreeStructure, WarningCircle, X,
+  ArrowClockwise, CaretRight, ChatCircleDots, FolderOpen, Play, Stop, ArrowUp, SpeakerHigh, SpeakerSlash, GearSix, Check, SidebarSimple as SidebarLeft, Cube, FileCode, Function as FnIcon, MagnifyingGlass, SidebarSimple, SquaresFour, TreeStructure, WarningCircle, X,
   type Icon as PhosphorIcon,
 } from "@phosphor-icons/react";
 
@@ -22,6 +22,10 @@ const ICONS = {
   play: Play,
   stop: Stop,
   send: ArrowUp,
+  sound: SpeakerHigh,
+  muted: SpeakerSlash,
+  settings: GearSix,
+  check: Check,
 } satisfies Record<string, PhosphorIcon>;
 
 export type IconName = keyof typeof ICONS;

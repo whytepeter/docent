@@ -6,6 +6,8 @@ import { askRoutes } from "./features/ask/index.ts";
 import { GraphIndex, graphRoutes } from "./features/graph/index.ts";
 import { RepoService, repoRoutes } from "./features/repo/index.ts";
 import { sourceRoutes } from "./features/source/index.ts";
+import { settingsRoutes } from "./features/settings/index.ts";
+import { voiceRoutes } from "./features/voice/index.ts";
 import { Workspace, workspaceRoutes } from "./features/workspace/index.ts";
 
 const LOCAL_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
@@ -23,6 +25,7 @@ function repoApp(repo: RepoService): Hono {
   app.route("/api", sourceRoutes(repo.root, () => repo.facts));
   app.route("/api", analysisRoutes(new AnalysisService(repo)));
   app.route("/api", askRoutes(repo, () => index));
+  app.route("/api", voiceRoutes(() => repo.root));
   return app;
 }
 
@@ -42,6 +45,7 @@ export function createApp(webDist: string | null, log: (line: string) => void = 
   });
 
   app.route("/api", workspaceRoutes(workspace));
+  app.route("/api", settingsRoutes());
   app.all("/api/*", (c) => (workspace.app ? workspace.app.fetch(c.req.raw) : c.json({ error: "No codebase is open" }, 409)));
 
   if (webDist && existsSync(webDist)) {

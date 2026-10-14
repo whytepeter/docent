@@ -1,5 +1,5 @@
 import { spawn, execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import Anthropic from "@anthropic-ai/sdk";
@@ -219,13 +219,20 @@ interface Config {
   model?: string;
 }
 
-export function readConfig(): Config {
+export function readConfig(): Config & Record<string, unknown> {
   const file = join(homedir(), ".docent", "config.json");
   try {
-    return JSON.parse(readFileSync(file, "utf8")) as Config;
+    return JSON.parse(readFileSync(file, "utf8")) as Config & Record<string, unknown>;
   } catch {
     return {};
   }
+}
+
+/** Writes ~/.docent/config.json, keeping keys this package doesn't know (the voice settings live there too). */
+export function writeConfig(config: Config & Record<string, unknown>): void {
+  const dir = join(homedir(), ".docent");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "config.json"), `${JSON.stringify(config, null, 2)}\n`);
 }
 
 /**

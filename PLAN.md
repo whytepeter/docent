@@ -152,14 +152,32 @@ The user can chat with Docent whenever something isn't clear, and the answer can
 - **Explains with the canvas:** an answer can include a short "scene": which boxes to highlight, which links to animate, in what order, with one caption per step. The canvas plays it with the same motion as episodes (camera glides, particles along links). "Show me" replays it; "explain simpler" asks again with an analogy first.
 - **Remembers the thread** per view, and lets the user jump from an answer straight to the box or line it mentions.
 
-### M4: Episodes (Learn mode)
+### M4: Episodes (Learn mode) — first episode built, waiting on your review
+Built:
+- **Content** (`packages/analyze/episode.ts`, `EpisodeSchema`): Claude writes from the feature's verified analysis: a plain intro, an analogy, a cast of 3–8 boxes each tied to real files and lines, 4–7 scenes with one objective each, steps pairing lit boxes with ~35 spoken words, a caption, the code lines, labeled packets, and a claim with evidence. One or two predict steps, the five self-check questions, and a hands-on exercise with a way to check it. A mechanical clean-up drops boxes that don't stand for real code (and the links, packets and ranges that point at them); every claim goes through the citation check and the second reader.
+- **Player** (`features/episode`, route `#/episode/<id>`): intro card, then the cast on the canvas laid out in lanes. Each step lights its boxes, plays its packets one after another in causal order (looping), frames the camera on them, and the code panel follows. Predict pauses until answered, then reveals with evidence. Space, ← and → drive it. Clicking a box pauses and shows its code with "Open in Work mode"; a "Back to the episode, step N" pill returns to the same step from anywhere, and position survives reloads. The map folds away while playing (P10). The end card holds the self-check (answers hidden) and the exercise.
+- Shared with Ask Docent: the same scene store and diagram, now with packets.
+- `docent episode <repo> <id>`; the feature view has "Watch the episode"; the server writes episodes as a background job and marks them stale when the feature's code changes.
+
+kyc document upload: 6 scenes, 20 steps, 7 boxes, 26 claims (24 confirmed, 1 taken back by the second reader), written in about 2.5 minutes.
+
+*Done when* is your call: watch it and compare it with `mockups/function-view.html`. Pacing is placeholder (word count) until M5 voice.
+
 - Scene-spec schema (steps: nodes, edges, lines, packets, narration, caption, evidence, predict).
 - Episode writer (Claude) with the Docent persona.
 - Player in `features/episode`: moving packets, captions, predict pauses, the code inspector following along.
 
 *Done when:* a generated episode for document upload is as clear and accurate as the hand-built mockup.
 
-### M5: Voice (pluggable)
+### M5: Voice (pluggable) — built, waiting on a Cartesia key
+Built: `packages/voice` with the `VoiceAdapter` interface below and a Cartesia adapter (`/tts/sse`, `sonic-3.6`, word timestamps), WAV clips cached in `~/.docent/voice/` by a hash of text + provider + voice. The server speaks a step only by episode and step number, so only narration text reaches the provider. The player's narration types word by word on the voice's clock (each word appears when it's spoken); pause freezes voice and text mid-line, play carries on, and the step moves on when the voice ends. Without a key it falls back to an estimated pace (2.6 words/s) and the speaker button explains why. Mute is remembered. The next line is fetched while the current one plays.
+Checked with a stand-in voice in the browser; not yet with Cartesia itself. To hear it: put `CARTESIA_API_KEY` in Docent's `.env` (gitignored; see `.env.example`) and restart. The CLI and the dev server both load it; a key already in the shell wins. Since then:
+- **Settings panel** (gear, top right): pick the narrator's provider (Cartesia or Fish Audio), paste or replace its key (tested by speaking a word before it's saved; stored in Docent's `.env`; only a masked hint comes back), search and preview voices (yours first) and choose one per provider, narration speed, an "expressive" switch, and Claude by subscription or API key.
+- **Fish Audio adapter** (`s2.1-pro`, falling back to the free `s2.1-pro-free` when the account has no API credit). Fish returns no word timings, so words are spread over the real clip length.
+- **Expression:** each episode step carries a tone (calm, warm, curious, concerned, emphatic) that the writer chooses; Cartesia gets an emotion and pace, Fish an inline `[cue]`. Older episodes infer it. Predict questions are spoken too, in a curious tone.
+Still to do: the pronunciation table, `docent voice <repo> <id>` to pre-build every clip.
+
+#### Original M5 plan
 - A `packages/voice` package with one small interface, so any provider plugs in:
   ```ts
   interface VoiceAdapter {

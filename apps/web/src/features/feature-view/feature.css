@@ -33,3 +33,6 @@
 .part-of-step { padding-left: 26px !important; color: var(--ink-2); font-size: 12px; align-items: flex-start; }
 .part-of-step .grow { white-space: normal; line-height: 1.4; }
 .part-of-step .step-n { font: 600 10.5px var(--mono); color: var(--ink-3); min-width: 14px; padding-top: 1px; }
+.watch { display: inline-flex; align-items: center; gap: 7px; margin: 0 0 12px; height: 34px; padding: 0 16px; border: 0; border-radius: 999px; background: var(--accent); color: var(--on-accent); font: 600 13px var(--sans); cursor: pointer; transition: background-color .15s ease, transform .12s var(--ease-out); }
+.watch:hover { background: var(--accent-ink); }
+.watch:active { transform: scale(.97); }

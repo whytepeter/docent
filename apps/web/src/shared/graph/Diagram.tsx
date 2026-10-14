@@ -7,7 +7,7 @@ import { CardNode, DiveContext, SectionNode, type CardNodeType, type SectionNode
 import { FlowEdge, type FlowEdgeType } from "./FlowEdge.tsx";
 import { easeInOutCubic, easeOutQuint, reducedMotion } from "./motion.ts";
 import type { DiagramEdge, DiagramNode, DiagramSection } from "./types.ts";
-import { insets, inspectorVisible, sidebarStore } from "../state/chrome.ts";
+import { insets, inspectorVisible, inspectorWidth, sidebarStore } from "../state/chrome.ts";
 import { entryDirection } from "../state/router.ts";
 import { canvasStore, sceneStore } from "../state/scene.ts";
 import { useStore } from "../state/store.ts";
@@ -16,6 +16,10 @@ import "./flow.css";
 const nodeTypes = { card: CardNode, section: SectionNode };
 const edgeTypes = { flow: FlowEdge };
 const MAX_ZOOM = 1.15;
+/** Room kept clear under a playing scene for its caption or play bar. */
+const SCENE_BOTTOM = 190;
+/** Seconds between one packet setting off and the next. */
+const PACKET_GAP = 1.7;
 
 export interface DiagramProps {
   nodes: DiagramNode[];
@@ -34,6 +38,8 @@ export interface DiagramProps {
   topSpace?: number;
   /** Never open below this zoom; a tall picture starts at its top and scrolls instead of shrinking. */
   readableZoom?: number;
+  /** Clicking a box calls its handler straight away, without the zoom into it (players keep the camera). */
+  noDive?: boolean;
 }
 
 /**
@@ -49,14 +55,15 @@ export function Diagram(props: DiagramProps) {
   );
 }
 
-function FlowInner({ nodes, edges, label, sections = [], edgeShape = "curve", flowing = false, edgeLabels = false, quietEdges = false, topSpace = 0, readableZoom = 0 }: DiagramProps) {
+function FlowInner({ nodes, edges, label, sections = [], edgeShape = "curve", flowing = false, edgeLabels = false, quietEdges = false, topSpace = 0, readableZoom = 0, noDive = false }: DiagramProps) {
   const [hover, setHover] = useState<string | null>(null);
   const [leaving, setLeaving] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const { setViewport, setCenter, getZoom, getNode } = useReactFlow();
   const sidebarOpen = useStore(sidebarStore);
   const inspectorOpen = useStore(inspectorVisible);
-  const inset = insets(sidebarOpen, inspectorOpen);
+  const panelWidth = useStore(inspectorWidth);
+  const inset = insets(sidebarOpen, inspectorOpen, panelWidth);
   const px = (n: number) => `${n}px` as const;
   const padding = { top: px(inset.top + topSpace), bottom: px(inset.bottom), left: px(inset.left), right: px(inset.right) };
   const paddingKey = JSON.stringify(padding);
@@ -66,6 +73,9 @@ function FlowInner({ nodes, edges, label, sections = [], edgeShape = "curve", fl
   // First appearance: fit, then arrive with a short zoom in the direction of travel (deeper zooms in,
   // back up zooms out). Later: animate re-fits when the window resizes or a panel opens or closes.
   const settled = useRef(false);
+  /** While a scene plays, where the camera should rest instead (framing its lit boxes). */
+  const sceneFit = useRef<(() => { x: number; y: number; zoom: number }) | null>(null);
+  const restAt = () => sceneFit.current?.() ?? target();
   /** Where the camera should rest: fit to the open space, unless that would make text too small. Computed, not queued. */
   const target = useCallback(() => {
     const el = box.current;
@@ -110,7 +120,7 @@ function FlowInner({ nodes, edges, label, sections = [], edgeShape = "curve", fl
   // Later changes (window resize, a panel opening or closing) glide to the new rest position.
   useEffect(() => {
     if (!settled.current) return;
-    const t = setTimeout(() => setViewport(target(), { duration: 420, ease: easeOutQuint, interpolate: "smooth" }), 30);
+    const t = setTimeout(() => setViewport(restAt(), { duration: 420, ease: easeOutQuint, interpolate: "smooth" }), 30);
     return () => clearTimeout(t);
   }, [paddingKey, target, setViewport]);
   useEffect(() => {
@@ -122,7 +132,7 @@ function FlowInner({ nodes, edges, label, sections = [], edgeShape = "curve", fl
       if (initial) return void (initial = false);
       if (!settled.current) return;
       clearTimeout(rt);
-      rt = setTimeout(() => setViewport(target(), { duration: 420, ease: easeOutQuint, interpolate: "smooth" }), 60);
+      rt = setTimeout(() => setViewport(restAt(), { duration: 420, ease: easeOutQuint, interpolate: "smooth" }), 60);
     });
     ro.observe(el);
     return () => {
@@ -165,11 +175,20 @@ function FlowInner({ nodes, edges, label, sections = [], edgeShape = "curve", fl
     const explicit = new Set(step.edges.map((e) => `${e.from}>${e.to}`));
     return new Set(edges.filter((e) => explicit.has(`${e.from}>${e.to}`) || explicit.has(`${e.to}>${e.from}`) || (sceneLit.has(e.from) && sceneLit.has(e.to))).map((e) => e.id));
   }, [step, sceneLit, edges]);
+  // Packets play one after another in the order the step lists them (the order things happen), then loop.
+  const packetsOn = useMemo(() => {
+    const out = new Map<string, { label: string; back: boolean; bad: boolean; delay: number; cycle: number }[]>();
+    const all = step?.packets ?? [];
+    const cycle = PACKET_GAP * all.length + 1.4;
+    all.forEach((p, i) => out.set(p.edge, [...(out.get(p.edge) ?? []), { label: p.label, back: p.back, bad: p.bad, delay: 0.3 + i * PACKET_GAP, cycle }]));
+    return out;
+  }, [step]);
   const wasPlaying = useRef(false);
   useEffect(() => {
     const el = box.current;
     if (!settled.current || !el) return;
     if (!sceneLit) {
+      sceneFit.current = null;
       if (wasPlaying.current) setViewport(target(), { duration: 520, ease: easeOutQuint, interpolate: "smooth" });
       wasPlaying.current = false;
       return;
@@ -181,9 +200,13 @@ function FlowInner({ nodes, edges, label, sections = [], edgeShape = "curve", fl
     const minY = Math.min(...lit.map((n) => n.y));
     const maxX = Math.max(...lit.map((n) => n.x + n.w));
     const maxY = Math.max(...lit.map((n) => n.y + n.h));
-    const pad = JSON.parse(paddingKey) as Record<"top" | "bottom" | "left" | "right", string>;
-    const fit = getViewportForBounds({ x: minX, y: minY, width: maxX - minX, height: maxY - minY }, el.clientWidth, el.clientHeight, 0.3, 1.25, pad as never);
-    setViewport(fit, { duration: reducedMotion() ? 0 : 700, ease: easeInOutCubic, interpolate: "smooth" });
+    // Leave room at the bottom for the caption or play bar floating over the canvas.
+    sceneFit.current = () => {
+      const pad = JSON.parse(paddingKey) as Record<"top" | "bottom" | "left" | "right", string>;
+      const framed = { ...pad, bottom: `${parseFloat(pad.bottom) + SCENE_BOTTOM}px` };
+      return getViewportForBounds({ x: minX, y: minY, width: maxX - minX, height: maxY - minY }, el.clientWidth, el.clientHeight, 0.3, 1.25, framed as never);
+    };
+    setViewport(sceneFit.current(), { duration: reducedMotion() ? 0 : 700, ease: easeInOutCubic, interpolate: "smooth" });
   }, [sceneLit, nodes, paddingKey, setViewport, target]);
 
   const linked = useMemo(() => {
@@ -228,17 +251,20 @@ function FlowInner({ nodes, edges, label, sections = [], edgeShape = "curve", fl
       className: `flow-edge${e.tone === "inferred" ? " inferred" : ""}${on ? " on" : ""}${quiet ? " faded" : ""}`,
       markerEnd: { type: MarkerType.ArrowClosed, width: 13, height: 13, color },
       style: e.width ? { strokeWidth: e.width } : undefined,
-      data: { shape: edgeShape, dots: flowing || on, label: e.label, showLabel: edgeLabels || on },
+      data: {
+        shape: edgeShape, dots: (flowing || on) && !packetsOn.get(e.id), label: e.label, showLabel: (edgeLabels || on) && !packetsOn.get(e.id),
+        ...(packetsOn.get(e.id) ? { packets: packetsOn.get(e.id), packetKey: scene?.index ?? 0 } : {}),
+      },
       focusable: false,
     };
-  }), [edges, hover, sceneEdges, quietEdges, edgeShape, flowing, edgeLabels]);
+  }), [edges, hover, sceneEdges, packetsOn, scene?.index, quietEdges, edgeShape, flowing, edgeLabels]);
 
   const onEnter: NodeMouseHandler = useCallback((_, n) => n.type === "card" && setHover(n.id), []);
   const onLeave: NodeMouseHandler = useCallback(() => setHover(null), []);
   const onClick: NodeMouseHandler = useCallback((_, n) => {
     const data = n.data as unknown as CardNodeType["data"];
-    if (n.type === "card" && data.onClick) dive(n.id, data.onClick);
-  }, [dive]);
+    if (n.type === "card" && data.onClick) (noDive ? data.onClick() : dive(n.id, data.onClick));
+  }, [dive, noDive]);
 
   return (
     <DiveContext.Provider value={dive}>

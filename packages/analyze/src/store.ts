@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { repoCacheDir } from "@docent/extract";
+import type { Episode } from "./episode.ts";
 import type { FeatureAnalysis, FeatureMap } from "./types.ts";
 
 const featuresFile = (root: string) => join(repoCacheDir(root), "features.json");
@@ -38,4 +39,22 @@ export function loadAnalysis(root: string, id: string): FeatureAnalysis | null {
 
 export function listAnalyses(root: string): FeatureAnalysis[] {
   return readdirSync(analysisDir(root)).filter((f) => f.endsWith(".json")).map((f) => loadAnalysis(root, f.slice(0, -5))).filter((a): a is FeatureAnalysis => !!a);
+}
+
+const episodeDir = (root: string) => {
+  const dir = join(repoCacheDir(root), "episodes");
+  mkdirSync(dir, { recursive: true });
+  return dir;
+};
+
+export function saveEpisode(root: string, e: Episode): void {
+  writeFileSync(join(episodeDir(root), `${e.featureId}.json`), JSON.stringify(e, null, 2));
+}
+
+export function loadEpisode(root: string, id: string): Episode | null {
+  try {
+    return JSON.parse(readFileSync(join(episodeDir(root), `${id}.json`), "utf8")) as Episode;
+  } catch {
+    return null;
+  }
 }
