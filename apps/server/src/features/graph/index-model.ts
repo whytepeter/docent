@@ -246,7 +246,9 @@ export class GraphIndex {
 
   health(): Health {
     return {
-      missingPaths: this.facts.docs.flatMap((d) => d.mentions.filter((m) => m.missing).map((m) => ({ doc: d.path, line: m.line, text: m.text, kind: d.kind }))),
+      missingPaths: this.facts.docs.flatMap((d) => d.mentions.filter((m) => m.missing).map((m) => ({
+        doc: d.path, line: m.line, text: m.text, kind: d.kind, missingKind: m.missingKind ?? "path", ...(m.removedIn ? { removedIn: m.removedIn } : {}),
+      }))),
       unreferenced: this.facts.unreferenced.map((u) => ({ file: u.file, reason: u.reason })),
       inferred: this.facts.edges.filter((e) => e.confidence !== "confirmed").map((e) => ({ from: e.from, to: e.to, file: e.file, line: e.line, ...(e.via ? { via: e.via } : {}) })),
     };

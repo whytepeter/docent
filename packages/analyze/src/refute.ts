@@ -25,7 +25,7 @@ const MAX_LINES = 40;
 /** Claims the second reader looks at: everything that would be shown as fact. */
 export const needsReview = (c: AnalysisClaim) => c.label === "confirmed" || c.label === "record";
 
-export async function refuteClaims(llm: LlmProvider, facts: Facts, root: string, claims: AnalysisClaim[]): Promise<AnalysisClaim[]> {
+export async function refuteClaims(llm: LlmProvider, facts: Facts, root: string, claims: AnalysisClaim[], signal?: AbortSignal): Promise<AnalysisClaim[]> {
   const ids = claims.flatMap((c, i) => (needsReview(c) ? [i] : []));
   if (!ids.length) return claims;
   const result = await llm.ask({
@@ -35,6 +35,7 @@ export async function refuteClaims(llm: LlmProvider, facts: Facts, root: string,
     tools: llm.id === "claude-code" ? "read" : "none",
     cwd: root,
     effort: "medium",
+    signal,
   });
   return applyReview(claims, result.data.verdicts);
 }

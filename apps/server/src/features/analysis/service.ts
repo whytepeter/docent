@@ -2,7 +2,7 @@ import {
   discoverFeatures, filesHash, listAnalyses, loadAnalysis, loadFeatureMap, saveAnalysis, saveFeatureMap, verifyAll,
   type Feature, type FeatureMap,
 } from "@docent/analyze";
-import type { FeatureCard, FeaturesState, Job } from "@docent/contracts";
+import type { AnalysisHealth, FeatureCard, FeaturesState, Job, PartOf } from "@docent/contracts";
 import { pickProvider } from "@docent/llm";
 import type { RepoService } from "../repo/index.ts";
 
@@ -12,6 +12,7 @@ import type { RepoService } from "../repo/index.ts";
  */
 export class AnalysisService {
   private job: Job | null = null;
+  private abort: AbortController | null = null;
 
   constructor(private readonly repo: RepoService) {}
 
@@ -67,25 +68,82 @@ export class AnalysisService {
     return { feature, analysis, stale: !!analysis && analysis.filesHash !== filesHash(this.repo.facts, feature.files) };
   }
 
+  /** Every verified feature's issues, doc mismatches and taken-back claims, in one list for the health report. */
+  health(): AnalysisHealth {
+    const map = loadFeatureMap(this.root);
+    const out: AnalysisHealth = { issues: [], docMismatches: [], disputed: [], stale: [] };
+    const rank = { high: 0, medium: 1, low: 2 };
+    for (const f of map?.features ?? []) {
+      const a = loadAnalysis(this.root, f.id);
+      if (!a) continue;
+      const base = { featureId: f.id, feature: f.name };
+      if (a.filesHash !== filesHash(this.repo.facts, f.files)) out.stale.push(base);
+      const at = (ev: { file: string; start: number; end: number }[]) => (ev[0] ? { file: ev[0].file, start: ev[0].start, end: ev[0].end } : null);
+      for (const i of a.issues) out.issues.push({ ...base, title: i.title, detail: i.detail, severity: i.severity, at: at(i.evidence) });
+      for (const c of a.claims) {
+        if (c.kind === "doc-mismatch") out.docMismatches.push({ ...base, text: c.text, label: c.label, at: at(c.evidence) });
+        if (c.claimedLabel && c.checkNote) out.disputed.push({ ...base, text: c.text, claimedLabel: c.claimedLabel, label: c.label, note: c.checkNote });
+      }
+    }
+    out.issues.sort((x, y) => rank[x.severity] - rank[y.severity]);
+    return out;
+  }
+
+  /**
+   * The way back up: every feature that owns this file, and the steps of its verified flow
+   * that run through it. With a symbol, only steps naming it or inside its lines count.
+   */
+  partOf(file: string, symbolId?: string): PartOf {
+    const map = loadFeatureMap(this.root);
+    const symbol = symbolId ? this.repo.facts.symbols.find((s) => s.id === symbolId) : undefined;
+    // A feature counts if it owns the file, or if its verified flow passes through it (shared code
+    // belongs to one feature in the map but is used by others).
+    const features = (map?.features ?? []).map((f) => {
+      const flow = loadAnalysis(this.root, f.id)?.flow ?? [];
+      const steps = flow.flatMap((s, index) => {
+        const here = symbol
+          ? s.symbol === symbol.id || (s.file === file && s.start <= symbol.range.end && s.end >= symbol.range.start)
+          : s.file === file;
+        return here ? [{ index: index + 1, step: s.step }] : [];
+      });
+      return { id: f.id, name: f.name, kind: f.kind, steps, owns: f.files.includes(file) };
+    }).filter((f) => f.owns || f.steps.length).map(({ owns: _, ...f }) => f);
+    // With a symbol, features whose flow actually passes through it come first.
+    features.sort((a, b) => b.steps.length - a.steps.length);
+    return { features };
+  }
+
   private running() {
     return !!this.job && !this.job.finishedAt;
   }
 
+  /** Stops the running job: Claude sessions in flight are killed, finished features stay saved. */
+  cancel(): Job | null {
+    if (!this.running() || !this.abort) return this.job;
+    this.abort.abort();
+    this.job!.cancelled = true;
+    this.job!.message = this.job!.kind === "verify" ? `Cancelled after ${this.job!.done.length} of ${this.job!.total}` : "Discovery cancelled";
+    this.job!.finishedAt = new Date().toISOString();
+    return this.job;
+  }
+
   startDiscovery(): Job {
     if (this.running()) return this.job!;
+    const abort = (this.abort = new AbortController());
     const job: Job = { kind: "discover", startedAt: new Date().toISOString(), total: 1, done: [], failed: [], message: "Reading the facts and proposing features" };
     this.job = job;
     void (async () => {
       try {
-        const map = await discoverFeatures(pickProvider(), this.repo.facts, this.root);
+        const map = await discoverFeatures(pickProvider(), this.repo.facts, this.root, abort.signal);
         saveFeatureMap(this.root, map);
         job.done.push("map");
         job.message = `Proposed ${map.features.length} features`;
       } catch (e) {
+        if (abort.signal.aborted) return;
         job.error = (e as Error).message;
         job.message = "Discovery failed";
       } finally {
-        job.finishedAt = new Date().toISOString();
+        job.finishedAt ??= new Date().toISOString();
       }
     })();
     return job;
@@ -95,24 +153,26 @@ export class AnalysisService {
     if (this.running()) return this.job!;
     const map = loadFeatureMap(this.root);
     const features = (map?.features ?? []).filter((f) => !only || f.id === only);
+    const abort = (this.abort = new AbortController());
     const job: Job = { kind: "verify", startedAt: new Date().toISOString(), total: features.length, done: [], failed: [], message: `Verifying ${features.length} features` };
     this.job = job;
     void (async () => {
       try {
         await verifyAll(pickProvider(), this.repo.facts, this.root, features, {
+          signal: abort.signal,
           onDone: (id, r) => {
             if (r instanceof Error) job.failed.push({ id, error: r.message });
             else {
               saveAnalysis(this.root, r);
               job.done.push(id);
             }
-            job.message = `Verified ${job.done.length} of ${job.total}`;
+            if (!abort.signal.aborted) job.message = `Verified ${job.done.length} of ${job.total}`;
           },
         });
       } catch (e) {
-        job.error = (e as Error).message;
+        if (!abort.signal.aborted) job.error = (e as Error).message;
       } finally {
-        job.finishedAt = new Date().toISOString();
+        job.finishedAt ??= new Date().toISOString();
       }
     })();
     return job;

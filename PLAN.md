@@ -127,7 +127,12 @@ Runs on your Claude subscription through `packages/llm` (an API key is optional)
 
 **Open any codebase:** `docent` with no folder opens the app on an "Open a codebase" screen: the macOS folder dialog, a pasted path, or a recent one (`~/.docent/recent.json`). The repo name in the map panel switches to another. The server holds a workspace and rebuilds the repo routes on each open. Extraction now skips build output (`dist/`, `build/`, `.next/`, minified bundles) even when a repo commits it.
 
-**Still to do in M3:** the user approves the map; verify the remaining 15 features; a merged health report (docs vs code, unused, duplicates across features); "Participates in" links from files and functions back to features and flow steps.
+**Done since:**
+- **Merged health report.** One panel gathers the mechanical findings and every verified feature's issues, its doc-vs-code mismatches, claims the check or the second reader took back, and features verified before their code changed. The extractor now flags docs that name code the repo once declared and has since removed, with the commit that removed it (`git log -S`, kept only if that commit deleted a declaration, so EXIF tags and browser APIs aren't flagged). On kyc it finds both mockup errors without being told (`ARCHITECTURE.md:84`; `services/README.md:40` `DocumentUploadError`, removed in `0301b21`) plus one nobody knew about (`hooks/README.md:119` `useDocumentDetectionSocket`, removed in `25780de`).
+- **"Part of":** file and function details list the features they belong to and the verified flow steps that run through them, including features that only pass through shared code.
+- **Stop a running job:** the job pill has a stop button; Claude sessions in flight are killed and finished features stay saved.
+
+**Still to do in M3:** the user approves the map; verify the remaining 15 features; duplicates across features.
 
 **Backlog found along the way:**
 - Cancel a running job (a mis-click started a duplicate verification with no way to stop it).

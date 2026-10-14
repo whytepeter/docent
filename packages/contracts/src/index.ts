@@ -152,9 +152,21 @@ export interface SearchHit {
 }
 
 export interface Health {
-  missingPaths: { doc: string; line: number; text: string; kind: "doc" | "agent" }[];
+  /** Doc mentions of a file path, or a name the code once declared, that no longer exist. */
+  missingPaths: { doc: string; line: number; text: string; kind: "doc" | "agent"; missingKind: "path" | "name"; removedIn?: { sha: string; subject: string } }[];
   unreferenced: { file: string; reason: string }[];
   inferred: { from: string; to: string; file: string; line: number; via?: string }[];
+}
+
+/** What the feature verifications found, gathered across features for the health report. */
+export interface AnalysisHealth {
+  issues: { featureId: string; feature: string; title: string; detail: string; severity: "high" | "medium" | "low"; at: { file: string; start: number; end: number } | null }[];
+  /** Claims where a doc and the code disagree, found by reading both. */
+  docMismatches: { featureId: string; feature: string; text: string; label: string; at: { file: string; start: number; end: number } | null }[];
+  /** Claims the citation check or the second reader took back: shown so nobody relies on them. */
+  disputed: { featureId: string; feature: string; text: string; claimedLabel: string; label: string; note: string }[];
+  /** Features whose code changed since they were verified. */
+  stale: { featureId: string; feature: string }[];
 }
 
 export interface RecentRepo {
@@ -220,6 +232,18 @@ export interface Job {
   failed: { id: string; error: string }[];
   message: string;
   error?: string;
+  cancelled?: boolean;
+}
+
+/** Which features a file or function belongs to, and the flow steps that pass through it. */
+export interface PartOf {
+  features: {
+    id: string;
+    name: string;
+    kind: Feature["kind"];
+    /** Flow steps (from the feature's verification) that land in this file or function. */
+    steps: { index: number; step: string }[];
+  }[];
 }
 
 export interface FeatureCard {

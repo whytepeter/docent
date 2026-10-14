@@ -159,8 +159,9 @@ function run(bin: string, args: string[], stdin: string, cwd: string | undefined
     let err = "";
     child.stdout.on("data", (d) => (out += d));
     child.stderr.on("data", (d) => (err += d));
-    child.on("error", (e) => reject(new LlmError(`Couldn't start Claude Code: ${e.message}`, "claude-code")));
+    child.on("error", (e) => reject(signal?.aborted ? new LlmError("Cancelled", "claude-code") : new LlmError(`Couldn't start Claude Code: ${e.message}`, "claude-code")));
     child.on("close", (code) => {
+      if (signal?.aborted) return reject(new LlmError("Cancelled", "claude-code"));
       if (code === 0 || out.trim().startsWith("{")) resolve(out);
       else reject(new LlmError(`Claude Code exited with ${code}`, "claude-code", (err || out).slice(0, 600)));
     });

@@ -27,7 +27,7 @@ export const filesHash = (facts: Facts, files: string[]) => {
   return createHash("sha1").update(files.slice().sort().map((f) => `${f}:${byPath.get(f) ?? "?"}`).join("\n")).digest("hex").slice(0, 16);
 };
 
-export async function verifyFeature(llm: LlmProvider, facts: Facts, root: string, feature: Feature): Promise<FeatureAnalysis> {
+export async function verifyFeature(llm: LlmProvider, facts: Facts, root: string, feature: Feature, signal?: AbortSignal): Promise<FeatureAnalysis> {
   const prompt = [
     `Feature: ${feature.name} (${feature.id}) — ${feature.summary}`,
     `Kind: ${feature.kind}`,
@@ -43,10 +43,11 @@ export async function verifyFeature(llm: LlmProvider, facts: Facts, root: string
     tools: llm.id === "claude-code" ? "read" : "none",
     cwd: root,
     effort: "medium",
+    signal,
   });
   const checked = makeChecker(root, facts).apply(result.data);
   // A separate session, with none of this one's context, tries to refute what survived the citation check.
-  checked.claims = await refuteClaims(llm, facts, root, checked.claims);
+  checked.claims = await refuteClaims(llm, facts, root, checked.claims, signal);
   return {
     version: 1,
     featureId: feature.id,
@@ -68,17 +69,19 @@ export async function verifyAll(
   facts: Facts,
   root: string,
   features: Feature[],
-  { concurrency = 3, onDone }: { concurrency?: number; onDone?: (id: string, result: FeatureAnalysis | Error) => void } = {},
+  { concurrency = 3, onDone, signal }: { concurrency?: number; onDone?: (id: string, result: FeatureAnalysis | Error) => void; signal?: AbortSignal } = {},
 ): Promise<Map<string, FeatureAnalysis | Error>> {
   const results = new Map<string, FeatureAnalysis | Error>();
   const queue = [...features];
   const worker = async () => {
-    for (let f = queue.shift(); f; f = queue.shift()) {
+    // A cancelled run stops taking new features; the ones in flight are killed through the signal.
+    for (let f = queue.shift(); f && !signal?.aborted; f = queue.shift()) {
       try {
-        const r = await verifyFeature(llm, facts, root, f);
+        const r = await verifyFeature(llm, facts, root, f, signal);
         results.set(f.id, r);
         onDone?.(f.id, r);
       } catch (error) {
+        if (signal?.aborted) return;
         results.set(f.id, error as Error);
         onDone?.(f.id, error as Error);
       }

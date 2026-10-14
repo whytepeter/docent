@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, posix } from "node:path";
 import { git } from "./repo.ts";
-import type { CommitFact, DocFact, EntryFact, FileFact, SymbolFact } from "./types.ts";
+import type { CommitFact, DocFact, DocMention, EntryFact, FileFact, SymbolFact } from "./types.ts";
 
 const MAX_COMMITS = 3000;
 const COCHANGE_MAX_FILES = 40;
@@ -40,12 +40,45 @@ export function readHistory(root: string, known: Set<string>): { commits: Commit
   return { commits, cochange };
 }
 
+/**
+ * Finds the commit that removed a name's declaration: the last commit that changed how often it
+ * appears (`git log -S`), only if that commit deleted a line declaring it. A name the code never
+ * declared (a browser API, an EXIF tag, a JSON field) returns null, so the doc isn't flagged.
+ */
+function removalOf(root: string) {
+  const cache = new Map<string, { sha: string; subject: string } | null>();
+  return (name: string) => {
+    if (!cache.has(name)) {
+      let found: { sha: string; subject: string } | null = null;
+      try {
+        const [sha, subject = ""] = git(root, ["log", "-S", name, "-1", "--format=%h%x09%s"]).trim().split("\t");
+        if (sha) {
+          const esc = name.replace(/[$]/g, "\\$");
+          const declared = new RegExp(`^-(?!--).*\\b(class|function|interface|type|enum|const|let|var)\\s+${esc}\\b`, "m");
+          if (declared.test(git(root, ["show", sha, "--format=", "-U0"]))) found = { sha, subject };
+        }
+      } catch {
+        /* no history */
+      }
+      cache.set(name, found);
+    }
+    return cache.get(name)!;
+  };
+}
+
 export function readDocs(root: string, files: FileFact[], symbols: SymbolFact[]): DocFact[] {
   const paths = new Set(files.map((f) => f.path));
+  const removal = removalOf(root);
   const byName = new Map<string, string[]>();
   for (const s of symbols) byName.set(s.name, [...(byName.get(s.name) ?? []), s.id]);
 
-  const resolveMention = (text: string, docDir: string): { target: string | null; missing?: boolean } => {
+  // Every word in every code file, comments included, so a name only counts as gone when nothing mentions it.
+  const codeWords = new Set<string>();
+  for (const f of files.filter((f) => f.lang)) for (const w of readFileSync(join(root, f.path), "utf8").matchAll(/[A-Za-z_$][\w$]*/g)) codeWords.add(w[0]);
+  // Only names shaped like code (PascalCase or camelCase with a hump) are checked; plain words in backticks are not.
+  const codeName = /^(?:[A-Z][a-z0-9]+(?:[A-Z][a-z0-9]*)+|[a-z][a-z0-9]*(?:[A-Z][a-z0-9]*)+)$/;
+
+  const resolveMention = (text: string, docDir: string): Pick<DocMention, "target" | "missing" | "missingKind" | "removedIn"> => {
     const clean = text.replace(/\(\)$/, "").replace(/^\.?\//, "").replace(/[:#]\d+(-\d+)?$/, "");
     if (paths.has(clean)) return { target: clean };
     const local = posix.normalize(posix.join(docDir, clean));
@@ -55,7 +88,12 @@ export function readDocs(root: string, files: FileFact[], symbols: SymbolFact[])
     const ids = byName.get(clean);
     if (ids?.length === 1) return { target: ids[0]! };
     const pathLike = /^[\w.@~-]+(\/[\w.@[\]()-]+)+\.\w{1,5}$/.test(clean);
-    return pathLike ? { target: null, missing: true } : { target: null };
+    if (pathLike) return { target: null, missing: true, missingKind: "path" };
+    if (clean.length >= 6 && codeName.test(clean) && !codeWords.has(clean)) {
+      const removedIn = removal(clean);
+      if (removedIn) return { target: null, missing: true, missingKind: "name", removedIn };
+    }
+    return { target: null };
   };
 
   const docs: DocFact[] = [];

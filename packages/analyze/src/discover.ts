@@ -16,7 +16,7 @@ Rules:
 - Keep names plain and short. The summary is one sentence a newcomer understands.
 - You may read files to settle a doubt, but stay brief: the facts below are the main source.`;
 
-export async function discoverFeatures(llm: LlmProvider, facts: Facts, root: string): Promise<FeatureMap> {
+export async function discoverFeatures(llm: LlmProvider, facts: Facts, root: string, signal?: AbortSignal): Promise<FeatureMap> {
   const result = await llm.ask({
     system: SYSTEM,
     prompt: `Here are the facts extracted from the repository. Propose its feature map.\n\n${discoveryDigest(facts)}`,
@@ -24,6 +24,7 @@ export async function discoverFeatures(llm: LlmProvider, facts: Facts, root: str
     tools: llm.id === "claude-code" ? "read" : "none",
     cwd: root,
     effort: "medium",
+    signal,
   });
   return validateDiscovery(result.data, facts, { model: result.model, provider: result.provider });
 }

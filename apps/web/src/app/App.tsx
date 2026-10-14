@@ -56,6 +56,25 @@ export function App() {
 
   useEffect(() => inspectorVisible.set(detailsShown), [detailsShown]);
 
+  // The server shows one codebase for every tab. If it switches (another tab, a restart),
+  // this page's cached views describe the wrong repo, so start over on the new one.
+  const shownRoot = workspace.data?.current?.root;
+  useEffect(() => {
+    if (!shownRoot) return;
+    const check = () => {
+      if (document.hidden) return;
+      api.workspace().then((w) => {
+        if (w.current?.root !== shownRoot) window.location.reload();
+      }, () => {});
+    };
+    const timer = setInterval(check, 4000);
+    document.addEventListener("visibilitychange", check);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", check);
+    };
+  }, [shownRoot]);
+
   // [ toggles the map, ] toggles details, ⌘\ hides or shows all panels (as in Figma).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

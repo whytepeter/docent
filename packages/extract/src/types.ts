@@ -91,8 +91,12 @@ export interface DocMention {
   line: number;
   /** A file path or symbol id the mention resolves to. */
   target: string | null;
-  /** The mention looks like a repo path, but no such file exists. A likely stale doc. */
+  /** The mention looks like a repo path or a code name, but nothing in the code matches. A likely stale doc. */
   missing?: boolean;
+  /** What kind of thing is missing: a file path, or a name the code once declared and no longer contains. */
+  missingKind?: "path" | "name";
+  /** For a missing name: the commit that removed its declaration. Evidence of when and how it went away. */
+  removedIn?: { sha: string; subject: string };
 }
 
 export interface DocFact {

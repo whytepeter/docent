@@ -7,6 +7,7 @@ import { revealGroup } from "../../shared/state/inspector.ts";
 import { navigate } from "../../shared/state/router.ts";
 import { Commits, Group, shortPath } from "../../shared/ui/index.ts";
 import { openCode } from "../code/index.ts";
+import { PartOf } from "../feature-view/index.ts";
 
 const MAX_SIDE = 10;
 const MAX_ROWS = 14;
@@ -79,6 +80,7 @@ export function FileInspector({ path }: { path: string }) {
         </div>
         {data.unreferenced && <div className="i-note warn">No file imports this and it isn’t an entry point. It may be unused.</div>}
       </div>
+      <PartOf file={path} />
       <Group id="symbols" title="Inside it" count={data.symbols.length} open>
         {data.symbols.map((s) => (
           <button key={s.id} className="row" onClick={() => (s.kind === "const" ? openCode(path, s.line) : navigate({ view: "fn", id: s.id }))}>

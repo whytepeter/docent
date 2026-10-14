@@ -22,7 +22,23 @@ describe("extract on a small fixture", () => {
     git(root, "init", "-q", "-b", "main");
     git(root, "-c", "user.email=t@t", "-c", "user.name=t", "add", ".");
     git(root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "Add upload pipeline");
+    // A class that existed and was removed, and a doc that still names it next to a browser API.
+    writeFileSync(join(root, "src/lib/legacy.ts"), "export class LegacyUploadError extends Error {}\n");
+    git(root, "-c", "user.email=t@t", "-c", "user.name=t", "add", ".");
+    git(root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "Add the legacy error");
+    git(root, "rm", "-q", "src/lib/legacy.ts");
+    writeFileSync(join(root, "NOTES.md"), "Failures throw `LegacyUploadError`. The preview sets `innerHTML` directly.\n");
+    git(root, "-c", "user.email=t@t", "-c", "user.name=t", "add", ".");
+    git(root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "Drop the legacy error");
     facts = extract(root);
+  });
+
+  it("flags a doc naming code that was removed, with the commit that removed it, and ignores names the code never declared", () => {
+    const notes = facts.docs.find((d) => d.path === "NOTES.md")!;
+    const missing = notes.mentions.filter((m) => m.missing);
+    expect(missing.map((m) => m.text)).toEqual(["LegacyUploadError"]);
+    expect(missing[0]!.missingKind).toBe("name");
+    expect(facts.commits.find((c) => c.sha.startsWith(missing[0]!.removedIn!.sha))?.subject).toBe("Drop the legacy error");
   });
 
   it("follows a call through a barrel re-export to the real function", () => {
@@ -67,7 +83,7 @@ describe("extract on a small fixture", () => {
   it("collects env vars, markers and history", () => {
     expect(facts.env.map((e) => e.name)).toEqual(["VITE_API_URL"]);
     expect(facts.markers[0]).toMatchObject({ kind: "TODO", file: "src/lib/upload.ts" });
-    expect(facts.commits[0]?.subject).toBe("Add upload pipeline");
+    expect(facts.commits.map((c) => c.subject)).toContain("Add upload pipeline");
   });
 
   it("leaves the repo untouched", () => {

@@ -1,4 +1,4 @@
-import type { AreaView, Feature, FeatureDetail, FeaturesState, FileView, Health, Job, Overview, SearchHit, SourceSlice, Status, SymbolView, TreeNode, Workspace } from "@docent/contracts";
+import type { AnalysisHealth, AreaView, Feature, FeatureDetail, FeaturesState, FileView, Health, Job, Overview, SearchHit, SourceSlice, Status, SymbolView, TreeNode, Workspace, PartOf } from "@docent/contracts";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   // The server refuses state changes without this header, which other sites can't send.
@@ -18,6 +18,7 @@ export const api = {
   overview: () => request<Overview>("/api/overview"),
   tree: () => request<TreeNode[]>("/api/tree"),
   health: () => request<Health>("/api/health"),
+  analysisHealth: () => request<AnalysisHealth>("/api/features/health"),
   status: () => request<Status>("/api/status"),
   search: (text: string) => request<SearchHit[]>(`/api/search?q=${q(text)}`),
   area: (id: string) => request<AreaView>(`/api/area?id=${q(id)}`),
@@ -28,6 +29,8 @@ export const api = {
   reextract: () => request<Status>("/api/reextract", { method: "POST" }),
   features: () => request<FeaturesState>("/api/features"),
   feature: (id: string) => request<FeatureDetail>(`/api/features/${q(id)}`),
+  partOf: (file: string, symbol?: string) => request<PartOf>(`/api/part-of?file=${q(file)}${symbol ? `&symbol=${q(symbol)}` : ""}`),
+  cancelJob: () => request<Job | null>("/api/features/cancel", { method: "POST" }),
   discover: () => request<Job>("/api/features/discover", { method: "POST" }),
   verify: (id?: string) => request<Job>("/api/features/verify", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(id ? { id } : {}) }),
   saveFeatures: (features: Feature[], approve = false) =>

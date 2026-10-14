@@ -3,6 +3,7 @@ import { navigate } from "../../shared/state/router.ts";
 import { Commits, Group, shortPath } from "../../shared/ui/index.ts";
 import { CodeView, openCode } from "../code/index.ts";
 import { EvidenceDot } from "../evidence/index.ts";
+import { PartOf } from "../feature-view/index.ts";
 import { useSymbol } from "./FunctionCanvas.tsx";
 
 const MAX_EXCERPT = 80;
@@ -52,6 +53,7 @@ export function FunctionInspector({ id }: { id: string }) {
         <button className="link" onClick={() => openCode(symbol.file, symbol.line, symbol.end)}>Open whole file</button>
         {symbol.end > lastLine && <span className="empty">showing the first {MAX_EXCERPT} lines</span>}
       </div>
+      <PartOf file={symbol.file} symbol={symbol.id} />
       <Group id="callers" title="Called by" count={data.callers.length}><LinkRows links={data.callers} side="in" /></Group>
       <Group id="callees" title="Calls" count={data.callees.length}><LinkRows links={data.callees} side="out" /></Group>
       {data.children.length > 0 && (

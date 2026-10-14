@@ -18,7 +18,7 @@ const USAGE = `docent — guided tours of a codebase
   docent discover <repo>         ask Claude to propose the feature map (you review it next)
   docent features <repo>         show the feature map
   docent approve <repo>          freeze the feature map as reviewed
-  docent verify <repo> [id]      verify every feature (or one) with checked evidence
+  docent verify <repo> [id]      verify features not yet verified (or one, again) with checked evidence
 
 Facts are cached in ~/.docent/repos/.`;
 
@@ -144,14 +144,22 @@ function printFeatures(map: import("@docent/analyze").FeatureMap) {
 }
 
 async function verify(repo: string, only?: string) {
-  const { loadFeatureMap, saveAnalysis, verifyAll } = await import("@docent/analyze");
+  const { filesHash, loadAnalysis, loadFeatureMap, saveAnalysis, verifyAll } = await import("@docent/analyze");
   const { pickProvider } = await import("@docent/llm");
   const root = resolve(repo);
   const map = loadFeatureMap(root);
   if (!map) throw new Error("No feature map yet. Run: docent discover <repo>");
   const facts = load(repo);
-  const features = map.features.filter((f) => !only || f.id === only);
-  if (!features.length) throw new Error(`No feature ${only}`);
+  if (only && !map.features.some((f) => f.id === only)) throw new Error(`No feature ${only}`);
+  // Without an id, skip features already verified against this code and through the second reader.
+  const done = (f: (typeof map.features)[number]) => {
+    const a = loadAnalysis(root, f.id);
+    return !!a && a.filesHash === filesHash(facts, f.files) && a.claims.some((c) => c.review);
+  };
+  const skipped = only ? [] : map.features.filter(done);
+  const features = map.features.filter((f) => (only ? f.id === only : !done(f)));
+  if (skipped.length) console.log(dim(`  already verified and unchanged: ${skipped.map((f) => f.id).join(", ")}`));
+  if (!features.length) return console.log("  Every feature is verified and up to date.");
   const llm = pickProvider();
   console.log(dim(`  ${llm.describe()} · verifying ${features.length} feature${features.length > 1 ? "s" : ""}, 3 at a time`));
   await verifyAll(llm, facts, root, features, {
