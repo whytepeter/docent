@@ -20,7 +20,9 @@ const INSET_END = "0.88";
 /** At rest (paused, reduced motion) a chip sits mid-link: the spot clearest of both boxes, so its label reads. */
 const REST = "0.5";
 /** Vertical spacing between resting chips on the same link. */
-const STACK = 28;
+const STACK = 21;
+/** Longer labels are cut with an ellipsis; the narration and caption carry the detail. */
+const MAX_LABEL = 24;
 
 export type FlowEdgeType = Edge<FlowEdgeData, "flow">;
 
@@ -47,7 +49,9 @@ export const FlowEdge = memo(function FlowEdge(props: EdgeProps<FlowEdgeType>) {
         </g>
       )}
       {data?.packets?.map((p, i) => {
-        const w = Math.max(48, p.label.length * 7.4 + 22);
+        // Small enough not to hide the picture: short labels, compact chips.
+        const label = p.label.length > MAX_LABEL ? `${p.label.slice(0, MAX_LABEL - 1).trimEnd()}…` : p.label;
+        const w = Math.max(36, label.length * 6 + 14);
         // One loop of the whole step: wait for its turn, travel, fade, wait for the others. Paused or reduced motion: rest mid-link.
         const still = reducedMotion() || !!data.paused;
         const t0 = p.delay / p.cycle;
@@ -59,8 +63,8 @@ export const FlowEdge = memo(function FlowEdge(props: EdgeProps<FlowEdgeType>) {
           <g key={`${data.packetKey}:${i}:${data.paused ? "p" : "r"}`} className={`packet${p.bad ? " bad" : ""}`} aria-hidden="true" opacity={still ? 1 : 0}>
             {/* At rest, chips sharing a link stack above and below its middle instead of covering each other. */}
             <g transform={still ? `translate(0 ${(i - (data.packets!.length - 1) / 2) * STACK}) ` : undefined}>
-              <rect x={-w / 2} y={-12} width={w} height={24} rx={12} />
-              <text textAnchor="middle" dy="0.35em">{p.label}</text>
+              <rect x={-w / 2} y={-9} width={w} height={18} rx={9} />
+              <text textAnchor="middle" dy="0.35em">{label}</text>
             </g>
             {still ? (
               <animateMotion dur="0.01s" fill="freeze" path={path} keyPoints={`${REST};${REST}`} keyTimes="0;1" calcMode="linear" />
@@ -75,7 +79,7 @@ export const FlowEdge = memo(function FlowEdge(props: EdgeProps<FlowEdgeType>) {
       })}
       {data?.label && data.showLabel && (
         <EdgeLabelRenderer>
-          <div className="edge-label nodrag nopan" style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }}>
+          <div className="edge-label nodrag nopan" title={data.label} style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }}>
             {data.label}
           </div>
         </EdgeLabelRenderer>

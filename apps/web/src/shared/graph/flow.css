@@ -14,7 +14,9 @@
 .flow-dots circle { fill: var(--accent); opacity: .85; }
 .flow-edge:not(.on) .flow-dots circle { fill: var(--edge-dot); }
 .flow .react-flow__handle { opacity: 0; width: 1px; height: 1px; min-width: 0; min-height: 0; border: 0; pointer-events: none; }
-.edge-label { position: absolute; pointer-events: none; font: 500 10.5px var(--mono); color: var(--ink-2); background: var(--card); border: 1px solid var(--line); padding: 1px 7px; border-radius: 999px; box-shadow: 0 1px 2px rgba(17, 24, 39, .06); white-space: nowrap; animation: fade .2s ease; }
+/* Link names: small, short, and above the boxes, so a short link's name is never half-hidden. Full text on hover. */
+.flow .react-flow__edgelabel-renderer { z-index: 1001; }
+.edge-label { position: absolute; font: 500 10px var(--sans); color: var(--ink-2); background: var(--card); border: 1px solid var(--line); padding: 0 6px; line-height: 16px; border-radius: 999px; box-shadow: 0 1px 2px rgba(17, 24, 39, .06); white-space: nowrap; max-width: 150px; overflow: hidden; text-overflow: ellipsis; animation: fade .2s ease; }
 .flow-edge.on ~ * .edge-label { color: var(--accent-ink); }
 
 /* sections */
@@ -104,9 +106,9 @@
 .flow .react-flow__attribution { background: transparent; color: var(--ink-3); opacity: .6; font-size: 9px; }
 .flow .react-flow__attribution a { color: inherit; }
 @media (prefers-reduced-motion: reduce) { .flow-dots { display: none; } }
-.packet rect { fill: var(--accent); filter: drop-shadow(0 2px 6px color-mix(in srgb, var(--accent) 35%, transparent)); }
-.packet text { fill: var(--on-accent); font: 600 12.5px var(--sans); }
-.packet.bad rect { fill: var(--brick-dot); filter: drop-shadow(0 2px 6px color-mix(in srgb, var(--brick-dot) 35%, transparent)); }
+.packet rect { fill: var(--accent); filter: drop-shadow(0 1px 3px color-mix(in srgb, var(--accent) 30%, transparent)); }
+.packet text { fill: var(--on-accent); font: 600 10.5px var(--sans); }
+.packet.bad rect { fill: var(--brick-dot); filter: drop-shadow(0 1px 3px color-mix(in srgb, var(--brick-dot) 30%, transparent)); }
 /* A packet landed here: the box reacts once (red for an error or refusal). */
 .card-pulse { position: absolute; inset: -1px; border-radius: inherit; pointer-events: none; animation: card-pulse 320ms var(--ease-out) forwards; }
 .card-pulse.bad { --pulse: var(--brick-dot); }
