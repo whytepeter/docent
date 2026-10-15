@@ -34,7 +34,7 @@
 .card-node {
   position: relative; background: var(--card); border: 1px solid var(--line); border-radius: var(--r);
   box-shadow: var(--shadow-card); padding: 11px 12px; color: var(--ink);
-  transition: transform .18s var(--ease-out), opacity .2s ease, border-color .15s ease, box-shadow .2s ease;
+  transition: transform .18s var(--ease-out), opacity .3s var(--ease-in-out), border-color .15s ease, box-shadow .2s ease;
 }
 .card-node.clickable { cursor: pointer; }
 @media (hover: hover) and (pointer: fine) {
@@ -43,6 +43,19 @@
 .card-node.clickable:active { transform: scale(.985); }
 .card-node.dim { opacity: .32; }
 .card-node.lit { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+/* In a playing scene, focus is unmistakable; a box new to the step rings once. */
+.card-node.lit-scene { border-color: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 12%, transparent), var(--shadow-card); }
+.card-node.arrive { animation: card-arrive 420ms var(--ease-out); }
+@keyframes card-arrive {
+  from { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 40%, transparent), var(--shadow-card); transform: scale(.985); }
+  to { box-shadow: 0 0 0 10px color-mix(in srgb, var(--accent) 0%, transparent), var(--shadow-card); transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  @keyframes card-arrive {
+    from { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 40%, transparent), var(--shadow-card); }
+    to { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 12%, transparent), var(--shadow-card); }
+  }
+}
 .card-head { display: flex; align-items: flex-start; gap: 10px; }
 .card-text { min-width: 0; flex: 1; }
 .card-chip { width: 28px; height: 28px; border-radius: 8px; flex: none; display: grid; place-items: center; margin-top: 1px;
@@ -94,3 +107,17 @@
 .packet rect { fill: var(--accent); filter: drop-shadow(0 2px 6px color-mix(in srgb, var(--accent) 35%, transparent)); }
 .packet text { fill: var(--on-accent); font: 600 12.5px var(--sans); }
 .packet.bad rect { fill: var(--brick-dot); filter: drop-shadow(0 2px 6px color-mix(in srgb, var(--brick-dot) 35%, transparent)); }
+/* A packet landed here: the box reacts once (red for an error or refusal). */
+.card-pulse { position: absolute; inset: -1px; border-radius: inherit; pointer-events: none; animation: card-pulse 320ms var(--ease-out) forwards; }
+.card-pulse.bad { --pulse: var(--brick-dot); }
+@keyframes card-pulse {
+  from { box-shadow: 0 0 0 0 color-mix(in srgb, var(--pulse, var(--accent)) 45%, transparent); transform: scale(1); }
+  40% { transform: scale(1.03); }
+  to { box-shadow: 0 0 0 12px color-mix(in srgb, var(--pulse, var(--accent)) 0%, transparent); transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  @keyframes card-pulse {
+    from { box-shadow: 0 0 0 3px color-mix(in srgb, var(--pulse, var(--accent)) 45%, transparent); }
+    to { box-shadow: 0 0 0 3px color-mix(in srgb, var(--pulse, var(--accent)) 0%, transparent); }
+  }
+}

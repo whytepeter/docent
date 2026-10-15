@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { reducedMotion } from "./motion.ts";
+import { reducedMotion, TRAVEL_S as TRAVEL } from "./motion.ts";
 import { BaseEdge, EdgeLabelRenderer, getBezierPath, getSmoothStepPath, type Edge, type EdgeProps } from "@xyflow/react";
 
 export type FlowEdgeData = {
@@ -11,10 +11,9 @@ export type FlowEdgeData = {
   /** Labeled packets that travel the link once, then rest at the far end. `key` restarts them. */
   packets?: { label: string; back: boolean; bad: boolean; delay: number; cycle: number }[];
   packetKey?: number;
+  /** The scene is paused: packets rest where they land and particles stop. */
+  paused?: boolean;
 };
-/** Seconds a packet takes to cross a link. */
-const TRAVEL = 1.3;
-
 export type FlowEdgeType = Edge<FlowEdgeData, "flow">;
 
 /**
@@ -30,7 +29,7 @@ export const FlowEdge = memo(function FlowEdge(props: EdgeProps<FlowEdgeType>) {
   return (
     <>
       <BaseEdge id={id} path={path} markerEnd={markerEnd} style={style} interactionWidth={18} />
-      {data?.dots && (
+      {data?.dots && !data.paused && (
         <g className="flow-dots" aria-hidden="true">
           {[0, 1].map((i) => (
             <circle key={i} r={2.6}>
@@ -42,13 +41,13 @@ export const FlowEdge = memo(function FlowEdge(props: EdgeProps<FlowEdgeType>) {
       {data?.packets?.map((p, i) => {
         const w = Math.max(48, p.label.length * 7.4 + 22);
         // One loop of the whole step: wait for its turn, travel, fade, wait for the others. Reduced motion: rest at the far end.
-        const still = reducedMotion();
+        const still = reducedMotion() || !!data.paused;
         const t0 = p.delay / p.cycle;
         const t1 = Math.min(0.97, (p.delay + TRAVEL) / p.cycle);
         const there = p.back ? "0" : "1";
         const from = p.back ? "1" : "0";
         return (
-          <g key={`${data.packetKey}:${i}`} className={`packet${p.bad ? " bad" : ""}`} aria-hidden="true" opacity={still ? 1 : 0}>
+          <g key={`${data.packetKey}:${i}:${data.paused ? "p" : "r"}`} className={`packet${p.bad ? " bad" : ""}`} aria-hidden="true" opacity={still ? 1 : 0}>
             <rect x={-w / 2} y={-12} width={w} height={24} rx={12} />
             <text textAnchor="middle" dy="0.35em">{p.label}</text>
             {still ? (

@@ -49,6 +49,7 @@
   --mono: "Geist Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
 
   --ease-out: cubic-bezier(.23, 1, .32, 1);
+  --ease-in-out: cubic-bezier(.77, 0, .175, 1);
   --ease-drawer: cubic-bezier(.32, .72, 0, 1);
   --r-sm: 8px;
   --r: 12px;

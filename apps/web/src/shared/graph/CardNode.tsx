@@ -6,7 +6,16 @@ import type { DiagramNode } from "./types.ts";
 const KIND_ICON = { area: SquaresFour, file: FileCode, fn: FnIcon, component: Cube, folder: Folder };
 const META_ICON = { file: FileCode, fn: FnIcon, test: CheckCircle, used: ArrowBendDownLeft, lines: TextAlignLeft };
 
-export type CardData = DiagramNode & { lit: boolean; dim: boolean };
+export type CardData = DiagramNode & {
+  lit: boolean;
+  dim: boolean;
+  /** A scene is playing (lit means "in focus now", not just "pointed at"). */
+  scene?: boolean;
+  /** New to the focus in this step: rings once. */
+  arrive?: boolean;
+  /** A packet just landed here; `n` changes on each landing so the pulse replays. */
+  pulse?: { n: number; bad: boolean };
+};
 
 /** Lets a row inside a box ask the canvas to dive into that box before moving on. */
 export const DiveContext = createContext<(nodeId: string, then: () => void) => void>((_, then) => then());
@@ -18,7 +27,7 @@ export const CardNode = memo(function CardNode({ id, data }: NodeProps<CardNodeT
   const dive = useContext(DiveContext);
   return (
     <div
-      className={`card-node tone-${data.tone ?? "default"}${clickable ? " clickable" : ""}${data.lit ? " lit" : ""}${data.dim ? " dim" : ""}`}
+      className={`card-node tone-${data.tone ?? "default"}${clickable ? " clickable" : ""}${data.lit ? " lit" : ""}${data.scene && data.lit ? " lit-scene" : ""}${data.arrive ? " arrive" : ""}${data.dim ? " dim" : ""}`}
       style={{ width: data.w, minHeight: data.h }}
       data-hue={data.hue}
     >
@@ -58,6 +67,7 @@ export const CardNode = memo(function CardNode({ id, data }: NodeProps<CardNodeT
       )}
       <Handle type="source" position={Position.Right} isConnectable={false} />
       <Handle id="b" type="source" position={Position.Bottom} isConnectable={false} />
+      {data.pulse && <span key={data.pulse.n} className={`card-pulse${data.pulse.bad ? " bad" : ""}`} aria-hidden="true" />}
     </div>
   );
 });

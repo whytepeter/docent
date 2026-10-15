@@ -5,7 +5,7 @@ import {
 } from "@xyflow/react";
 import { CardNode, DiveContext, SectionNode, type CardNodeType, type SectionNodeType } from "./CardNode.tsx";
 import { FlowEdge, type FlowEdgeType } from "./FlowEdge.tsx";
-import { easeInOutCubic, easeOutQuint, reducedMotion } from "./motion.ts";
+import { easeInOutCubic, easeOutQuint, PACKET_GAP_S as PACKET_GAP, PACKET_LEAD_S, reducedMotion, TRAVEL_S } from "./motion.ts";
 import type { DiagramEdge, DiagramNode, DiagramSection } from "./types.ts";
 import { insets, inspectorVisible, inspectorWidth, sidebarStore } from "../state/chrome.ts";
 import { entryDirection } from "../state/router.ts";
@@ -18,8 +18,6 @@ const edgeTypes = { flow: FlowEdge };
 const MAX_ZOOM = 1.15;
 /** Room kept clear under a playing scene for its caption or play bar. */
 const SCENE_BOTTOM = 190;
-/** Seconds between one packet setting off and the next. */
-const PACKET_GAP = 1.7;
 
 export interface DiagramProps {
   nodes: DiagramNode[];
@@ -175,14 +173,43 @@ function FlowInner({ nodes, edges, label, sections = [], edgeShape = "curve", fl
     const explicit = new Set(step.edges.map((e) => `${e.from}>${e.to}`));
     return new Set(edges.filter((e) => explicit.has(`${e.from}>${e.to}`) || explicit.has(`${e.to}>${e.from}`) || (sceneLit.has(e.from) && sceneLit.has(e.to))).map((e) => e.id));
   }, [step, sceneLit, edges]);
+  // Boxes new to this step get a one-time ring, so "what's new now" is visible.
+  const prevLit = useRef<Set<string>>(new Set());
+  const arrived = useMemo(() => {
+    const prev = prevLit.current;
+    return sceneLit ? new Set([...sceneLit].filter((id) => !prev.has(id))) : new Set<string>();
+  }, [sceneLit]);
+  useEffect(() => {
+    prevLit.current = sceneLit ?? new Set();
+  }, [sceneLit]);
+
   // Packets play one after another in the order the step lists them (the order things happen), then loop.
   const packetsOn = useMemo(() => {
     const out = new Map<string, { label: string; back: boolean; bad: boolean; delay: number; cycle: number }[]>();
     const all = step?.packets ?? [];
-    const cycle = PACKET_GAP * all.length + 1.4;
-    all.forEach((p, i) => out.set(p.edge, [...(out.get(p.edge) ?? []), { label: p.label, back: p.back, bad: p.bad, delay: 0.3 + i * PACKET_GAP, cycle }]));
+    const cycle = PACKET_LEAD_S + PACKET_GAP * all.length + 1.0;
+    const lead = reducedMotion() ? 0 : PACKET_LEAD_S;
+    all.forEach((p, i) => out.set(p.edge, [...(out.get(p.edge) ?? []), { label: p.label, back: p.back, bad: p.bad, delay: lead + i * PACKET_GAP, cycle }]));
     return out;
   }, [step]);
+  // When a packet lands, the box it reaches reacts once (first pass only): cause and effect, visible.
+  const [pulses, setPulses] = useState<Map<string, { n: number; bad: boolean }>>(new Map());
+  useEffect(() => {
+    // A new step starts clean: no ring left over from where the last one's data landed.
+    setPulses((m) => (m.size ? new Map() : m));
+    if (!step?.packets?.length || scene?.paused) return;
+    const still = reducedMotion();
+    const byId = new Map(edges.map((e) => [e.id, e]));
+    const timers = step.packets.map((p, i) => {
+      const edge = byId.get(p.edge);
+      if (!edge) return undefined;
+      const target = p.back ? edge.from : edge.to;
+      const at = still ? i * 150 : (PACKET_LEAD_S + i * PACKET_GAP + TRAVEL_S) * 1000;
+      return setTimeout(() => setPulses((m) => new Map(m).set(target, { n: (m.get(target)?.n ?? 0) + 1, bad: p.bad })), at);
+    });
+    return () => timers.forEach((t) => t && clearTimeout(t));
+  }, [step, scene?.paused, edges]);
+
   const wasPlaying = useRef(false);
   useEffect(() => {
     const el = box.current;
@@ -206,7 +233,7 @@ function FlowInner({ nodes, edges, label, sections = [], edgeShape = "curve", fl
       const framed = { ...pad, bottom: `${parseFloat(pad.bottom) + SCENE_BOTTOM}px` };
       return getViewportForBounds({ x: minX, y: minY, width: maxX - minX, height: maxY - minY }, el.clientWidth, el.clientHeight, 0.3, 1.25, framed as never);
     };
-    setViewport(sceneFit.current(), { duration: reducedMotion() ? 0 : 700, ease: easeInOutCubic, interpolate: "smooth" });
+    setViewport(sceneFit.current(), { duration: reducedMotion() ? 0 : 600, ease: easeInOutCubic, interpolate: "smooth" });
   }, [sceneLit, nodes, paddingKey, setViewport, target]);
 
   const linked = useMemo(() => {
@@ -229,13 +256,13 @@ function FlowInner({ nodes, edges, label, sections = [], edgeShape = "curve", fl
       position: { x: n.x, y: n.y },
       width: n.w,
       height: n.h,
-      data: { ...n, lit: !!linked?.has(n.id) && (linked.size > 1 || !!sceneLit), dim: !!linked && !linked.has(n.id) },
+      data: { ...n, lit: !!linked?.has(n.id) && (linked.size > 1 || !!sceneLit), dim: !!linked && !linked.has(n.id), scene: !!sceneLit, arrive: arrived.has(n.id), pulse: pulses.get(n.id) },
       draggable: false,
       selectable: false,
       focusable: !!n.onClick,
       ariaLabel: n.title,
     })),
-  ], [nodes, sections, linked, sceneLit]);
+  ], [nodes, sections, linked, sceneLit, arrived, pulses]);
 
   const rfEdges = useMemo<FlowEdgeType[]>(() => edges.map((e) => {
     const on = sceneEdges ? sceneEdges.has(e.id) : !!hover && (e.from === hover || e.to === hover);
@@ -254,10 +281,11 @@ function FlowInner({ nodes, edges, label, sections = [], edgeShape = "curve", fl
       data: {
         shape: edgeShape, dots: (flowing || on) && !packetsOn.get(e.id), label: e.label, showLabel: (edgeLabels || on) && !packetsOn.get(e.id),
         ...(packetsOn.get(e.id) ? { packets: packetsOn.get(e.id), packetKey: scene?.index ?? 0 } : {}),
+        paused: !!scene?.paused,
       },
       focusable: false,
     };
-  }), [edges, hover, sceneEdges, packetsOn, scene?.index, quietEdges, edgeShape, flowing, edgeLabels]);
+  }), [edges, hover, sceneEdges, packetsOn, scene?.index, scene?.paused, quietEdges, edgeShape, flowing, edgeLabels]);
 
   const onEnter: NodeMouseHandler = useCallback((_, n) => n.type === "card" && setHover(n.id), []);
   const onLeave: NodeMouseHandler = useCallback(() => setHover(null), []);

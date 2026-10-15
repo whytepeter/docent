@@ -3,7 +3,7 @@ import type { Episode, EpisodeState, VoiceClip } from "@docent/contracts";
 import { api } from "../../shared/api/client.ts";
 import { refreshFeatures, useFeatures } from "../../shared/api/features.ts";
 import { useQuery } from "../../shared/api/useQuery.ts";
-import { cardHeight, Diagram, hueFromPath, reducedMotion, type DiagramEdge, type DiagramNode } from "../../shared/graph/index.ts";
+import { cardHeight, Diagram, hueFromPath, reducedMotion, STEP_LEAD_MS, type DiagramEdge, type DiagramNode } from "../../shared/graph/index.ts";
 import { headerStore } from "../../shared/state/header.ts";
 import { sidebarStore } from "../../shared/state/chrome.ts";
 import { inspectorStore } from "../../shared/state/inspector.ts";
@@ -100,6 +100,13 @@ function Narration({ text, playing, clip, onDone }: { text: string; playing: boo
   const total = words.filter((w) => w.trim()).length;
   const [shown, setShown] = useState(playing && !reducedMotion() ? 0 : total);
   const [gaveUp, setGaveUp] = useState(false);
+  const [ready, setReady] = useState(!playing || reducedMotion());
+  // Speak once the camera has arrived; a resumed line doesn't wait again.
+  useEffect(() => {
+    if (ready || !playing) return;
+    const t = setTimeout(() => setReady(true), STEP_LEAD_MS);
+    return () => clearTimeout(t);
+  }, [ready, playing]);
   const [ended, setEnded] = useState(false);
   const done = useRef(onDone);
   done.current = onDone;
@@ -116,7 +123,7 @@ function Narration({ text, playing, clip, onDone }: { text: string; playing: boo
   }, [waiting, playing]);
 
   useEffect(() => {
-    if (!playing || waiting) {
+    if (!playing || waiting || !ready) {
       audio?.pause();
       return;
     }
@@ -147,7 +154,7 @@ function Narration({ text, playing, clip, onDone }: { text: string; playing: boo
     return () => clearInterval(t);
     // `shown` is read once when playback (re)starts; it isn't a dependency.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [text, playing, total, voiced, waiting, audio, clip]);
+  }, [text, playing, total, voiced, waiting, audio, clip, ready]);
 
   // The step is over when the voice ends (or, silent, when the last word shows), after a short hold.
   const finished = voiced ? ended : !waiting && shown >= total;

@@ -59,15 +59,22 @@ export const duration = (say: string) => Math.max(5000, (say.split(/\s+/).length
 export function syncScene(e: Episode | null, s: PlayerState) {
   if (!e || s.phase !== "play") return sceneStore.set(null);
   const links = new Map(e.links.map((l) => [l.id, l]));
-  const steps: SceneStep[] = flatten(e).map(({ data }) => ({
-    nodes: data.boxes,
-    edges: data.links.flatMap((id) => (links.has(id) ? [{ from: links.get(id)!.from, to: links.get(id)!.to }] : [])),
-    caption: data.caption,
-    packets: data.packets.map((p) => ({ edge: p.link, label: p.label, back: p.back, bad: p.bad })),
-  }));
+  const steps: SceneStep[] = flatten(e).map(({ data }, i) => {
+    // A predict step asks over a still picture: its packets are the answer, so they wait for one.
+    const hold = i === s.at && !!data.predict && s.picked === null;
+    return {
+      nodes: data.boxes,
+      edges: hold ? [] : data.links.flatMap((id) => (links.has(id) ? [{ from: links.get(id)!.from, to: links.get(id)!.to }] : [])),
+      caption: data.caption,
+      packets: hold ? [] : data.packets.map((p) => ({ edge: p.link, label: p.label, back: p.back, bad: p.bad })),
+    };
+  });
+  const paused = !s.playing || !!s.focus;
   const cur = sceneStore.get();
-  if (cur && cur.steps.length === steps.length && cur.index === s.at && cur.steps[0]?.caption === steps[0]?.caption) return;
-  sceneStore.set({ steps, index: s.at });
+  const same = cur && cur.steps.length === steps.length && cur.index === s.at && cur.steps[0]?.caption === steps[0]?.caption
+    && (cur.steps[s.at]?.packets?.length ?? 0) === (steps[s.at]?.packets?.length ?? 0) && !!cur.paused === paused;
+  if (same) return;
+  sceneStore.set({ steps, index: s.at, paused });
 }
 
 /** Whether the narrator speaks (when a voice is configured). Remembered in this browser. */

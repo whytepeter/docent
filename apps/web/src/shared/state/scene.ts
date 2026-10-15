@@ -17,6 +17,11 @@ export interface SceneStep {
 }
 
 /** A scene playing on the canvas (an answer shown, later an episode). Null when nothing plays. */
-export const sceneStore = createStore<{ steps: SceneStep[]; index: number } | null>(null);
+export const sceneStore = createStore<{
+  steps: SceneStep[];
+  index: number;
+  /** The learner paused: the canvas holds still. */
+  paused?: boolean;
+} | null>(null);
 
 export const stopScene = () => sceneStore.set(null);
