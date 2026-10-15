@@ -274,6 +274,8 @@ function FlowInner({ nodes, edges, label, sections = [], edgeShape = "curve", fl
       target: e.to,
       ...(e.vertical ? { sourceHandle: "b", targetHandle: "t" } : {}),
       type: "flow",
+      // A link carrying packets draws above the boxes, so its chips are never covered.
+      ...(packetsOn.get(e.id) ? { zIndex: 1000 } : {}),
       hidden: quietEdges && !on,
       className: `flow-edge${e.tone === "inferred" ? " inferred" : ""}${on ? " on" : ""}${quiet ? " faded" : ""}`,
       markerEnd: { type: MarkerType.ArrowClosed, width: 13, height: 13, color },

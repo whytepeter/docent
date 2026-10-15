@@ -14,6 +14,14 @@ export type FlowEdgeData = {
   /** The scene is paused: packets rest where they land and particles stop. */
   paused?: boolean;
 };
+/** Packets keep to this stretch of a link (as a fraction of its length), so a chip never hides under a box. */
+const INSET_START = "0.12";
+const INSET_END = "0.88";
+/** At rest (paused, reduced motion) a chip sits mid-link: the spot clearest of both boxes, so its label reads. */
+const REST = "0.5";
+/** Vertical spacing between resting chips on the same link. */
+const STACK = 28;
+
 export type FlowEdgeType = Edge<FlowEdgeData, "flow">;
 
 /**
@@ -40,18 +48,22 @@ export const FlowEdge = memo(function FlowEdge(props: EdgeProps<FlowEdgeType>) {
       )}
       {data?.packets?.map((p, i) => {
         const w = Math.max(48, p.label.length * 7.4 + 22);
-        // One loop of the whole step: wait for its turn, travel, fade, wait for the others. Reduced motion: rest at the far end.
+        // One loop of the whole step: wait for its turn, travel, fade, wait for the others. Paused or reduced motion: rest mid-link.
         const still = reducedMotion() || !!data.paused;
         const t0 = p.delay / p.cycle;
         const t1 = Math.min(0.97, (p.delay + TRAVEL) / p.cycle);
-        const there = p.back ? "0" : "1";
-        const from = p.back ? "1" : "0";
+        // Travel and rest on the visible part of the link, clear of the boxes at either end.
+        const there = p.back ? INSET_START : INSET_END;
+        const from = p.back ? INSET_END : INSET_START;
         return (
           <g key={`${data.packetKey}:${i}:${data.paused ? "p" : "r"}`} className={`packet${p.bad ? " bad" : ""}`} aria-hidden="true" opacity={still ? 1 : 0}>
-            <rect x={-w / 2} y={-12} width={w} height={24} rx={12} />
-            <text textAnchor="middle" dy="0.35em">{p.label}</text>
+            {/* At rest, chips sharing a link stack above and below its middle instead of covering each other. */}
+            <g transform={still ? `translate(0 ${(i - (data.packets!.length - 1) / 2) * STACK}) ` : undefined}>
+              <rect x={-w / 2} y={-12} width={w} height={24} rx={12} />
+              <text textAnchor="middle" dy="0.35em">{p.label}</text>
+            </g>
             {still ? (
-              <animateMotion dur="0.01s" fill="freeze" path={path} keyPoints={`${there};${there}`} keyTimes="0;1" calcMode="linear" />
+              <animateMotion dur="0.01s" fill="freeze" path={path} keyPoints={`${REST};${REST}`} keyTimes="0;1" calcMode="linear" />
             ) : (
               <>
                 <animateMotion dur={`${p.cycle}s`} repeatCount="indefinite" path={path} keyPoints={`${from};${from};${there};${there}`} keyTimes={`0;${t0};${t1};1`} calcMode="spline" keySplines="0 0 1 1;0.45 0 0.3 1;0 0 1 1" />
