@@ -55,7 +55,7 @@ export function Home({ repoName, onOpen, onSwitch, onSettings }: { repoName: str
   return (
     <div className="bd-home">
       <div className="bd-home-bar">
-        <span className="bd-home-brand"><Logo size={24} />Docent</span>
+        <span className="bd-home-brand" aria-label="docent"><Logo size={16} /><span className="bd-home-word">docent</span></span>
         <button className="bd-home-repo" onClick={onSwitch} title="Open another codebase">
           {repoName}<Icon name="chevron" size={13} weight="bold" />
         </button>

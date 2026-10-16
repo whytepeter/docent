@@ -7,8 +7,10 @@
 .bd-home-bar { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 8px; padding: 14px 16px 22px; background: linear-gradient(var(--canvas) 62%, transparent); }
 .bd-home-bar :is(.bd-home-brand, .bd-home-repo, .bd-home-gear) { height: 40px; display: inline-flex; align-items: center; gap: 8px; background: var(--panel); border: 1px solid var(--bline); border-radius: 12px; box-shadow: var(--bshadow); }
 .bd-home-brand { padding: 0 14px; font: 700 15px var(--head); }
-.bd-home-brand { padding-left: 8px !important; }
-.bd-home-brand .logo { display: block; flex: none; }
+.bd-home-brand { padding-left: 12px !important; }
+.bd-home-brand { letter-spacing: -.01em; }
+/* The icon carries its weight up top and the wordmark is lowercase, so optical centre sits a little lower. */
+.bd-home-brand .logo { display: block; flex: none; transform: translateY(1.5px); }
 .bd-home-bar .bd-home-repo { padding: 0 10px 0 14px; font: 600 14px var(--ui); color: var(--bink); cursor: pointer; transition: border-color .15s, color .15s; }
 .bd-home-repo svg { transform: rotate(90deg); color: var(--mut); }
 .bd-home-bar .bd-home-gear { margin-left: auto; width: 40px; justify-content: center; color: var(--mut); cursor: pointer; transition: border-color .15s, color .15s, transform .12s var(--ease-out); }
@@ -89,3 +91,11 @@
 .bd-home-t em { font-style: normal; font-size: 12px; font-weight: 600; color: var(--acc); margin-top: 4px; }
 @keyframes bd-rise { from { opacity: 0; transform: translateY(8px); } }
 @media (prefers-reduced-motion: reduce) { .bd-home-card, .bd-ov { animation: none; } .bd-ov-sk { animation: none; } }
+
+/* Phones: the mark alone, and the bar's pills shrink to fit. */
+@media (max-width: 560px) {
+  .bd-home-word { display: none; }
+  .bd-home-bar :is(.bd-home-brand) { width: 40px; padding: 0 !important; justify-content: center; }
+  .bd-home-bar .bd-home-repo { min-width: 0; max-width: calc(100vw - 32px - 40px - 40px - 40px - 24px); }
+  .bd-home-repo { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}

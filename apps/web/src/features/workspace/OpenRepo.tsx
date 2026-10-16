@@ -59,7 +59,7 @@ export function OpenRepo({ workspace, onClose }: { workspace: Workspace | undefi
     <div className={`open-repo${onClose ? " over" : ""}`} onClick={close && ((e) => e.target === e.currentTarget && close())}>
       <section className="open-card" role="dialog" aria-modal={!!onClose} aria-labelledby="open-title">
         <div className="open-head">
-          <span className="open-mark" aria-hidden="true"><Logo size={42} /></span>
+          <span className="open-mark" aria-hidden="true"><Logo size={22} /></span>
           <div>
             <h1 id="open-title">Open a codebase</h1>
             <p>Docent reads the folder. It never writes to it.</p>

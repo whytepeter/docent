@@ -235,8 +235,8 @@ function BoardView({ id, board, job, repoName, onHome, onSettings }: { id: strin
               <button onClick={() => e?.resetTry()}>Reset</button>
             </>
           )}
-          <button className={`bd-ask${chat ? " on" : ""}`} onClick={() => (chat ? closeChat() : setChat(true))} aria-pressed={chat} title="Ask Docent about this board (/)">
-            <Icon name="ask" size={16} />Ask
+          <button className={`bd-ask${chat ? " on" : ""}`} onClick={() => (chat ? closeChat() : setChat(true))} aria-pressed={chat} aria-label="Ask Docent" title="Ask Docent about this board (/)">
+            <Icon name="ask" size={16} /><span className="bd-ask-t">Ask</span>
           </button>
         </div>
       </div>

@@ -209,7 +209,12 @@
 [data-mode="defend"] .bd-card:hover { border-color: var(--acc); }
 
 @media (max-width: 700px) {
+  /* Leave room for the theme and settings buttons on the right. */
+  .bd-brand { max-width: calc(100vw - 28px - 116px); }
   .bd-bar { grid-template-columns: 1fr; grid-template-areas: "modes" "body" "ctl"; }
+  .bd-bar-ctl { justify-content: space-between; flex-wrap: wrap; gap: 4px; }
+  .bd-bar-ctl .bd-steps { flex: 1; min-width: 0; padding: 0 4px; gap: 3px; }
+  .bd-bar-ctl .bd-steps b { flex: 1; min-width: 6px; width: auto; }
   .bd-bar-hint { display: none; }
   .bd-launch { width: 300px; }
 }
@@ -285,3 +290,9 @@
 @keyframes bd-chat-in { from { opacity: 0; transform: translateX(10px); } }
 @keyframes bd-chat-dot { 0%, 80%, 100% { opacity: .25; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-2px); } }
 @media (prefers-reduced-motion: reduce) { .bd-chat { animation: none; } .bd-chat-dots i { animation: none; opacity: .7; } }
+@media (max-width: 420px) {
+  .bd-bar-ctl .bd-steps { display: none; }
+  .bd-fl .bd-play { min-width: 84px; }
+  .bd-ask-t { display: none; }
+  .bd-fl .bd-ask { margin-left: 0; }
+}

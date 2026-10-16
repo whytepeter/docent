@@ -102,8 +102,18 @@ label.set-line { cursor: pointer; }
 @keyframes set-drop { from { opacity: 0; transform: translateY(-4px); } }
 @media (prefers-reduced-motion: reduce) { .settings-over, .settings, .set-drop { animation: none; } }
 @media (max-width: 640px) {
-  .settings { grid-template-columns: 1fr; grid-template-rows: auto 1fr; height: 100%; }
-  .set-nav { flex-direction: row; align-items: center; padding: 12px; border-right: 0; border-bottom: 1px solid var(--line); }
+  .settings-over { padding: 8px; }
+  .settings { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); height: 100%; }
+  /* Sections become a row of tabs that scrolls sideways if it must; the close button sits beside them. */
+  .set-nav { flex-direction: row; align-items: center; padding: 10px 52px 10px 10px; border-right: 0; border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
+  .set-nav h2 { display: none; }
+  .set-nav > button { flex: none; }
+  .set-body { min-width: 0; padding-top: 16px; }
+  .set-x { position: fixed; top: 18px; right: 18px; z-index: 1; background: var(--card); }
+  .set-h { padding-right: 0; }
+  .set-key-row { flex-wrap: wrap; }
+  .set-saved { flex-basis: 100%; }
+  .set-seg { flex-wrap: wrap; }
   .set-nav h2 { margin: 0 8px 0 4px; }
   .set-foot { display: none; }
   .set-body { padding: 18px 16px 20px; }

@@ -10,7 +10,7 @@
 .open-card { position: relative; width: min(480px, 100%); padding: 24px; border-radius: 20px; border: 1px solid var(--line-2); background: var(--card); box-shadow: var(--shadow-float); animation: open-rise .26s var(--ease-out); }
 .open-head { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; }
 .open-head > div { flex: 1; min-width: 0; }
-.open-mark { flex: none; width: 42px; height: 42px; }
+.open-mark { flex: none; display: grid; place-items: center; }
 .open-mark .logo { display: block; }
 .open-head h1 { margin: 0; font: 700 19px/1.2 var(--display); letter-spacing: -.02em; color: var(--ink); }
 .open-head p { margin: 3px 0 0; font-size: 13px; color: var(--ink-2); }
