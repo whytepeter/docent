@@ -1,6 +1,6 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import "@fontsource-variable/bricolage-grotesque/standard.css";
+import "@fontsource-variable/atkinson-hyperlegible-next";
 import "@fontsource-variable/geist-mono";
 import "@fontsource/kalam/400.css";
 import "@fontsource/kalam/700.css";

@@ -1,13 +1,10 @@
-/**
- * Docent's mark: two parts joined by a path, the way a board follows a request.
- */
+import { Presentation } from "lucide-react";
+
+/** Docent's mark: Lucide's Presentation, a board being shown, white on the indigo tile. */
 export function Logo({ size = 22 }: { size?: number }) {
   return (
-    <svg className="logo" width={size} height={size} viewBox="0 0 32 32" aria-hidden="true">
-      <rect width="32" height="32" rx="9" fill="var(--logo-bg, #5B5BD6)" />
-      <path d="M10 22C10 14 22 18 22 10" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" />
-      <circle cx="10" cy="22" r="3.4" fill="#fff" />
-      <circle cx="22" cy="10" r="3.4" fill="#fff" />
-    </svg>
+    <span className="logo" style={{ width: size, height: size, borderRadius: size * 0.28, background: "var(--logo-bg, #5B5BD6)", display: "inline-grid", placeItems: "center", color: "#fff", flex: "none" }} aria-hidden="true">
+      <Presentation size={size * 0.62} strokeWidth={2.2} />
+    </span>
   );
 }
