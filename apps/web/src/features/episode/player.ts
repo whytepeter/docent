@@ -52,8 +52,32 @@ export const go = (at: number, total: number) => {
 };
 export const restart = () => set({ phase: "play", at: 0, playing: true, picked: null, focus: null });
 
-/** Rough speaking time until real audio drives pacing (M5): about 2.6 words a second, never under 5 s. */
-export const duration = (say: string) => Math.max(5000, (say.split(/\s+/).length / 2.6) * 1000 + 900);
+/** Reading speed for text without a voice clip, at 1×. */
+export const WORDS_PER_SECOND = 2.6;
+
+/** Time to read a line at the chosen speed (used where there's no voice clock), never under 3 s. */
+export const duration = (text: string, rate = 1) => Math.max(3000, (text.split(/\s+/).length / (WORDS_PER_SECOND * rate)) * 1000 + 450);
+
+/** Playback speed for the narrator and the text, like a video player's. Remembered in this browser. */
+export const RATES = [1, 1.25, 1.5, 1.75] as const;
+const RATE_KEY = "docent:rate";
+function savedRate(): number {
+  try {
+    const n = Number(localStorage.getItem(RATE_KEY));
+    return (RATES as readonly number[]).includes(n) ? n : 1.25;
+  } catch {
+    return 1.25;
+  }
+}
+export const rateStore = createStore<number>(savedRate());
+rateStore.subscribe(() => {
+  try {
+    localStorage.setItem(RATE_KEY, String(rateStore.get()));
+  } catch {
+    /* storage off */
+  }
+});
+export const nextRate = (r: number) => RATES[(RATES.indexOf(r as (typeof RATES)[number]) + 1) % RATES.length]!;
 
 /** The canvas plays the current step through the shared scene store, like an Ask Docent answer. */
 export function syncScene(e: Episode | null, s: PlayerState) {

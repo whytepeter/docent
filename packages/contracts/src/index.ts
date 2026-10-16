@@ -3,9 +3,29 @@
  * nothing else crosses the boundary.
  */
 import type { Confidence, EdgeKind, FileFact, SymbolKind } from "@docent/extract";
-import type { Episode, Feature, FeatureAnalysis, FeatureMap } from "@docent/analyze";
+import type { Board, Episode, Feature, FeatureAnalysis, FeatureMap, Flow, FlowList, ProjectOverview } from "@docent/analyze";
 
-export type { Episode, Feature, FeatureAnalysis, FeatureMap };
+export type { Board, Episode, Feature, FeatureAnalysis, FeatureMap, Flow, FlowList, ProjectOverview };
+
+/** The flows Docent proposed for this codebase, and the job proposing them. */
+export interface FlowsState {
+  flows: FlowList | null;
+  job: Job | null;
+  /** Flows whose board is already written. */
+  ready: string[];
+  /** What the project does, shown above the flows. */
+  overview: ProjectOverview | null;
+  overviewJob: Job | null;
+  /** Boards being drawn now, or finished in the last few minutes, so leaving a board never hides its progress. */
+  drawing: { id: string; title: string; job: Job }[];
+}
+
+/** One flow's board (once written) and the job writing or checking it. */
+export interface BoardState {
+  flow: Flow;
+  board: Board | null;
+  job: Job | null;
+}
 
 /** An episode and whether the feature's code changed since it was written. */
 export interface EpisodeState {
@@ -25,7 +45,8 @@ export type Route =
   | { view: "area"; id: string }
   | { view: "file"; path: string }
   | { view: "fn"; id: string }
-  | { view: "episode"; id: string };
+  | { view: "episode"; id: string }
+  | { view: "board"; id: string; step?: number; card?: string };
 
 export interface Area {
   id: string;
@@ -279,6 +300,7 @@ export const routeToHash = (route: Route): string => {
     case "feature": return `#/feature/${encodeURIComponent(route.id)}`;
     case "review": return "#/review";
     case "episode": return `#/episode/${encodeURIComponent(route.id)}`;
+    case "board": return `#/board/${encodeURIComponent(route.id)}`;
   }
 };
 
@@ -296,7 +318,7 @@ export const hashToRoute = (hash: string): Route => {
 
 /** A background job (discovery or verification) and how far it got. */
 export interface Job {
-  kind: "discover" | "verify" | "episode";
+  kind: "discover" | "verify" | "episode" | "prepare" | "flows" | "board" | "overview";
   startedAt: string;
   finishedAt?: string;
   total: number;
@@ -305,6 +327,14 @@ export interface Job {
   message: string;
   error?: string;
   cancelled?: boolean;
+  /** What's happening right now, in plain words. */
+  stage?: string;
+  /** Names of the features being worked on at this moment. */
+  active?: string[];
+  /** How long the whole job should take, in seconds from `startedAt`; refined as work finishes. */
+  estimateSeconds?: number;
+  /** The feature an episode job is for. */
+  featureId?: string;
 }
 
 /** Which features a file or function belongs to, and the flow steps that pass through it. */
@@ -328,6 +358,8 @@ export interface FeaturesState {
   map: FeatureMap | null;
   cards: FeatureCard[];
   job: Job | null;
+  /** Episode writing runs on its own lane, alongside the job above. */
+  episodeJob: Job | null;
   provider: string;
   /** A feature depends on another when one of its files imports one of the other's. */
   links: { from: string; to: string; count: number }[];

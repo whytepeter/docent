@@ -1,7 +1,17 @@
-.job-pill { position: fixed; z-index: 16; left: 50%; bottom: 64px; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; padding: 8px 14px; font-size: 12.5px; color: var(--ink-2); animation: rise .25s var(--ease-out); max-width: min(560px, calc(100% - 32px)); }
+.job-stack { position: fixed; z-index: 16; left: calc(var(--inset-left, 0px) + (100vw - var(--inset-left, 0px) - var(--inset-right, 0px)) / 2); bottom: 64px; transform: translateX(-50%); display: flex; flex-direction: column; gap: 8px; width: min(460px, calc(100vw - 32px)); }
+.job-pill { position: relative; display: flex; flex-direction: column; gap: 3px; padding: 9px 12px 11px 14px; font-size: 12.5px; color: var(--ink-2); animation: rise .25s var(--ease-out); overflow: hidden; }
+.job-line { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.job-main { flex: 1; min-width: 0; color: var(--ink); font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.job-count { flex: none; font: 600 11px var(--mono); color: var(--accent-ink); }
+.job-sub { display: flex; gap: 10px; padding-left: 23px; font-size: 11.5px; color: var(--ink-3); min-width: 0; }
+.job-active { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.job-left { flex: none; margin-left: auto; }
 .job-pill.done { color: var(--sage); }
-.job-pill.failed { color: var(--brick); }
-.job-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex: none; }
-.job-bar { width: 90px; height: 4px; border-radius: 2px; background: var(--fill-2); overflow: hidden; flex: none; }
-.job-bar i { display: block; height: 100%; background: var(--accent); border-radius: 2px; transition: width .4s var(--ease-out); }
-.job-cancel { height: 24px; min-width: 24px; padding: 0; margin: -4px -8px -4px -2px; border-radius: 7px; }
+.job-pill.done .job-main { color: var(--sage); }
+.job-pill.failed .job-main { color: var(--brick); white-space: normal; }
+.job-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex: none; margin: 0 3px; }
+.job-pill .spinner { width: 14px; height: 14px; }
+.job-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: var(--fill); }
+.job-bar i { display: block; height: 100%; background: var(--accent); transform-origin: left; transition: transform 1s linear; }
+.job-cancel { height: 24px; min-width: 24px; padding: 0; margin: -4px -6px -4px 0; border-radius: 7px; }
+@media (prefers-reduced-motion: reduce) { .job-bar i { transition: none; } }

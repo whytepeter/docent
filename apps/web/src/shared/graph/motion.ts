@@ -6,8 +6,10 @@ export const reducedMotion = () =>
   typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 /** One step's timeline: the camera moves first, then the narrator speaks, then data moves. */
-export const STEP_LEAD_MS = 600;
-export const PACKET_LEAD_S = 0.75;
+export const STEP_LEAD_MS = 350;
+export const PACKET_LEAD_S = 0.5;
+/** The camera's glide between steps; the narrator waits for most of it, not all. */
+export const SCENE_CAMERA_MS = 450;
 /** A packet crosses a link in TRAVEL_S; the next one sets off PACKET_GAP_S after the last. */
 export const TRAVEL_S = 1.3;
 export const PACKET_GAP_S = 1.7;

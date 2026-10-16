@@ -1,9 +1,11 @@
 export { answerQuestion, type AskBox, type AskInput, type CheckedAnswer } from "./ask.ts";
+export { checkBoard, citeBoard, cleanBoard, proposeFlows, writeBoard, type Board, type BoardCard, type Flow, type FlowList } from "./board.ts";
 export { discoverFeatures, validateDiscovery } from "./discover.ts";
 export { clean as cleanEpisode, narrationLine, writeEpisode, type Episode, type NarrationTone } from "./episode.ts";
 export { filesHash, verifyAll, verifyFeature } from "./verify.ts";
 export { makeChecker } from "./citations.ts";
 export { applyReview, needsReview, refuteClaims } from "./refute.ts";
 export { discoveryDigest, featureDigest } from "./digest.ts";
-export { listAnalyses, loadAnalysis, loadEpisode, loadFeatureMap, saveAnalysis, saveEpisode, saveFeatureMap } from "./store.ts";
+export { listAnalyses, loadAnalysis, loadBoard, loadEpisode, loadFeatureMap, loadFlows, loadOverview, saveAnalysis, saveBoard, saveEpisode, saveFeatureMap, saveFlows, saveOverview } from "./store.ts";
+export { checkOverview, citeOverview, writeOverview, type ProjectOverview, type OverviewPart } from "./overview.ts";
 export type { AnalysisClaim, CheckResult, Feature, FeatureAnalysis, FeatureMap } from "./types.ts";

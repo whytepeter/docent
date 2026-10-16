@@ -20,5 +20,7 @@ function mostRecent(): string | undefined {
 }
 
 const repo = process.env.DOCENT_REPO ?? process.argv[2] ?? mostRecent();
-const { url } = await startServer({ repo, serveWeb: false, log: (s) => console.log(`  ${s}…`) });
+// DOCENT_PORT runs a second copy beside one already on 4477 (e.g. to test while using Docent).
+const port = Number(process.env.DOCENT_PORT) || 4477;
+const { url } = await startServer({ repo, port, serveWeb: false, log: (s) => console.log(`  ${s}…`) });
 console.log(`docent api on ${url}${repo ? ` · ${repo}` : ""}`);

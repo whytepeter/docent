@@ -5,8 +5,9 @@
 .code .line::before { content: attr(data-line); position: absolute; left: 0; width: 38px; text-align: right; color: var(--ink-3); opacity: .7; user-select: none; }
 .code .line.on { background: var(--hl); box-shadow: inset 2px 0 0 var(--hl-bar); }
 @media (prefers-color-scheme: dark) {
-  .code .shiki, .code .shiki span { color: var(--shiki-dark) !important; }
+  :root:not([data-theme="light"]) .code .shiki, :root:not([data-theme="light"]) .code .shiki span { color: var(--shiki-dark) !important; }
 }
+:root[data-theme="dark"] .code .shiki, :root[data-theme="dark"] .code .shiki span { color: var(--shiki-dark) !important; }
 .code .shiki { background: transparent !important; }
 .code-loading { display: flex; justify-content: center; padding: 18px; }
 

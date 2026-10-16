@@ -18,6 +18,7 @@ export function analysisRoutes(svc: AnalysisService): Hono {
     })
     .post("/features/cancel", (c) => c.json(svc.cancel()))
     .post("/features/discover", (c) => c.json(svc.startDiscovery()))
+    .post("/features/prepare", (c) => c.json(svc.startPrepare()))
     .post("/features/verify", async (c) => {
       const body = (await c.req.json().catch(() => ({}))) as { id?: string };
       return c.json(svc.startVerify(body.id));

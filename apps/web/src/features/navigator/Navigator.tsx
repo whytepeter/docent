@@ -74,8 +74,7 @@ export function Navigator({ repoName, head, onOpenRepo }: { repoName: string; he
         <Item depth={0} icon="system" label="Overview" selected={route.view === "system"} onSelect={() => navigate({ view: "system" })} />
         {features?.map && (
           <div className="section">
-            <div className="sb-head" data-hue="features"><i aria-hidden="true" />Features{features.map.state === "proposed" ? " · to review" : ""}</div>
-            {features.map.state === "proposed" && <Item depth={0} icon="area" label="Review the map" selected={route.view === "review"} onSelect={() => navigate({ view: "review" })} />}
+            <div className="sb-head" data-hue="features"><i aria-hidden="true" />Features</div>
             {features.cards.map((c) => (
               <Item key={c.feature.id} depth={0} icon="area" label={c.feature.name} selected={route.view === "feature" && route.id === c.feature.id} onSelect={() => navigate({ view: "feature", id: c.feature.id })} />
             ))}

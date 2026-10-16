@@ -5,7 +5,7 @@ import {
 } from "@xyflow/react";
 import { CardNode, DiveContext, SectionNode, type CardNodeType, type SectionNodeType } from "./CardNode.tsx";
 import { FlowEdge, type FlowEdgeType } from "./FlowEdge.tsx";
-import { easeInOutCubic, easeOutQuint, PACKET_GAP_S as PACKET_GAP, PACKET_LEAD_S, reducedMotion, TRAVEL_S } from "./motion.ts";
+import { easeInOutCubic, easeOutQuint, PACKET_GAP_S as PACKET_GAP, PACKET_LEAD_S, reducedMotion, SCENE_CAMERA_MS, TRAVEL_S } from "./motion.ts";
 import type { DiagramEdge, DiagramNode, DiagramSection } from "./types.ts";
 import { insets, inspectorVisible, inspectorWidth, sidebarStore } from "../state/chrome.ts";
 import { entryDirection } from "../state/router.ts";
@@ -233,7 +233,7 @@ function FlowInner({ nodes, edges, label, sections = [], edgeShape = "curve", fl
       const framed = { ...pad, bottom: `${parseFloat(pad.bottom) + SCENE_BOTTOM}px` };
       return getViewportForBounds({ x: minX, y: minY, width: maxX - minX, height: maxY - minY }, el.clientWidth, el.clientHeight, 0.3, 1.25, framed as never);
     };
-    setViewport(sceneFit.current(), { duration: reducedMotion() ? 0 : 600, ease: easeInOutCubic, interpolate: "smooth" });
+    setViewport(sceneFit.current(), { duration: reducedMotion() ? 0 : SCENE_CAMERA_MS, ease: easeInOutCubic, interpolate: "smooth" });
   }, [sceneLit, nodes, paddingKey, setViewport, target]);
 
   const linked = useMemo(() => {

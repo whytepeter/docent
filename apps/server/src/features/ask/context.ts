@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { listAnalyses, loadAnalysis, loadFeatureMap, type FeatureAnalysis } from "@docent/analyze";
+import { listAnalyses, loadAnalysis, loadBoard, loadFeatureMap, type FeatureAnalysis } from "@docent/analyze";
 import type { Route } from "@docent/contracts";
 import type { GraphIndex } from "../graph/index.ts";
 
@@ -58,6 +58,20 @@ export function viewContext(root: string, index: GraphIndex, route: Route): stri
       const v = index.areaView(route.id);
       if (!v) break;
       out.push(`The folder "${v.area.label}" (${v.area.path}): ${v.files.map((f) => f.path).join(", ")}`);
+      break;
+    }
+    case "board": {
+      const b = loadBoard(root, route.id);
+      if (!b) break;
+      const step = route.step !== undefined ? b.steps[route.step] : undefined;
+      const focus = route.card ?? step?.card;
+      out.push(`A whiteboard that explains one flow: "${b.title}". ${b.intro}`);
+      if (step) out.push(`They're on tour step ${route.step! + 1} of ${b.steps.length}: "${step.text}"`);
+      out.push("", "The cards on the board, in the order a request meets them (id — title — file:lines — what it does):");
+      for (const c of b.cards) out.push(`- ${c.id} — ${c.title} — ${c.file}:${c.start}-${c.start + c.lines.length - 1} — ${c.role}`);
+      const f = b.cards.find((c) => c.id === focus);
+      if (f) out.push("", `The card they're looking at, "${f.title}" (${f.file}):`, ...f.lines.map((l, i) => `${String(f.start + i).padStart(5)}  ${l}`));
+      out.push("", "What the board already says, with labels:", ...b.cards.flatMap((c) => [`  - [${c.why.label}] ${c.title}: ${c.why.text}`]).slice(0, 12));
       break;
     }
     case "feature":

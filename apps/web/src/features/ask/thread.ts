@@ -19,7 +19,8 @@ let version = 0;
 const bump = () => ((version += 1), emit());
 let inFlight: AbortController | null = null;
 
-export const routeKey = (route: Route) => JSON.stringify(route);
+/** A board keeps one conversation whatever step it was asked from. */
+export const routeKey = (route: Route) => JSON.stringify(route.view === "board" ? { view: "board", id: route.id } : route);
 
 export function useThread(key: string): Turn[] {
   useSyncExternalStore((l) => (listeners.add(l), () => listeners.delete(l)), () => version);
@@ -28,7 +29,8 @@ export function useThread(key: string): Turn[] {
 
 export const isAsking = () => !!inFlight;
 
-export async function askQuestion(route: Route, question: string): Promise<void> {
+/** `view` overrides what's on screen; a board passes its cards and links (the canvas store is the old screens'). */
+export async function askQuestion(route: Route, question: string, view?: { boxes: { id: string; title: string; sub?: string }[]; links: { from: string; to: string; label?: string }[] }): Promise<void> {
   const key = routeKey(route);
   const turns = threads.get(key) ?? [];
   const history = turns.filter((t) => t.answer).map((t) => ({ question: t.question, answer: t.answer!.paragraphs.map((p) => p.text).join(" ") }));
@@ -37,7 +39,7 @@ export async function askQuestion(route: Route, question: string): Promise<void>
   bump();
   inFlight?.abort();
   const abort = (inFlight = new AbortController());
-  const { boxes, links } = canvasStore.get();
+  const { boxes, links } = view ?? canvasStore.get();
   try {
     await api.ask({ route, question, boxes, links, history }, (e) => {
       if (e.type === "stage") turn.stage = e.stage;

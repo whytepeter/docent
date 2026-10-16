@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import type { Settings, VoiceOption, VoiceProvider } from "@docent/contracts";
 import { api } from "../../shared/api/client.ts";
 import { invalidateAll } from "../../shared/api/useQuery.ts";
+import { useStore } from "../../shared/state/store.ts";
+import { themeStore, type Theme } from "../../shared/state/theme.ts";
 import { Icon } from "../../shared/ui/index.ts";
 import "./settings.css";
 
@@ -43,7 +45,7 @@ function KeyField({ label, saved, url, onSave }: { label: string; saved: string 
         </form>
       ) : (
         <div className="set-key-row">
-          <span className="set-saved"><Icon name="check" size={13} weight="bold" />{saved}</span>
+          <span className="set-saved"><Icon name="check" size={13} weight="bold" />Saved<code>{saved}</code></span>
           <button className="tbtn" onClick={() => setEditing(true)}>Replace</button>
           <button className="tbtn" disabled={busy} onClick={() => void save(null)}>Remove</button>
         </div>
@@ -60,6 +62,7 @@ function VoicePicker({ settings, onChange }: { settings: Settings; onChange: (s:
   const [list, setList] = useState<VoiceOption[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [playing, setPlaying] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
   const audio = useRef<HTMLAudioElement | null>(null);
   const hasKey = !!settings.voice.keys[provider];
 
@@ -77,7 +80,10 @@ function VoicePicker({ settings, onChange }: { settings: Settings; onChange: (s:
       clearTimeout(t);
     };
   }, [provider, query, hasKey]);
-  useEffect(() => setList(null), [provider]);
+  useEffect(() => {
+    setList(null);
+    setOpen(false);
+  }, [provider]);
   useEffect(() => () => audio.current?.pause(), []);
 
   const preview = async (v: VoiceOption) => {
@@ -97,26 +103,46 @@ function VoicePicker({ settings, onChange }: { settings: Settings; onChange: (s:
   };
 
   if (!hasKey) return <p className="set-hint">Add the key above to choose a voice.</p>;
+  const current = list?.find((v) => v.id === chosen);
   return (
     <div className="set-voices">
-      <input className="set-search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search voices" aria-label="Search voices" />
-      {error && <p className="set-error" role="alert">{error}</p>}
-      <div className="set-voice-list" role="listbox" aria-label="Voices">
-        {list === null && !error && <p className="set-hint">Loading voices…</p>}
-        {list?.length === 0 && <p className="set-hint">No voices match.</p>}
-        {list?.map((v) => (
-          <div key={v.id} className={`set-voice${v.id === chosen ? " on" : ""}`} role="option" aria-selected={v.id === chosen}>
-            <button className="set-voice-pick" onClick={() => void api.setVoice({ voice: v.id }).then(onChange)}>
-              <span className="set-voice-name">{v.name}{v.own && <em>Yours</em>}</span>
-              {v.description && <span className="set-voice-desc">{v.description}</span>}
-            </button>
-            <button className="tbtn" onClick={() => void preview(v)} aria-label={`Preview ${v.name}`} title="Preview">
-              <Icon name={playing === v.id ? "stop" : "play"} size={13} weight="bold" />
-            </button>
-            {v.id === chosen && <Icon name="check" size={15} weight="bold" />}
-          </div>
-        ))}
+      <div className={`set-select${open ? " open" : ""}`}>
+        <button className="set-select-btn" onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-haspopup="listbox">
+          <span className="set-voice-name">{current?.name ?? (chosen ? "Your chosen voice" : "Choose a voice")}{current?.own && <em>Yours</em>}</span>
+          {current?.description && <span className="set-voice-desc">{current.description}</span>}
+        </button>
+        {current && (
+          <button className="tbtn" onClick={() => void preview(current)} aria-label={`Preview ${current.name}`} title="Preview">
+            <Icon name={playing === current.id ? "stop" : "play"} size={13} weight="bold" />
+          </button>
+        )}
+        <button className="tbtn set-select-chev" onClick={() => setOpen((o) => !o)} aria-label={open ? "Close the list" : "Change voice"}><Icon name="chevron" size={15} /></button>
       </div>
+      {error && <p className="set-error" role="alert">{error}</p>}
+      {open && (
+        <div className="set-drop">
+          <label className="set-search">
+            <Icon name="search" size={14} />
+            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search voices" aria-label="Search voices" autoFocus />
+          </label>
+          <div className="set-voice-list" role="listbox" aria-label="Voices">
+            {list === null && !error && <p className="set-hint">Loading voices…</p>}
+            {list?.length === 0 && <p className="set-hint">No voices match.</p>}
+            {list?.map((v) => (
+              <div key={v.id} className={`set-voice${v.id === chosen ? " on" : ""}`} role="option" aria-selected={v.id === chosen}>
+                <button className="set-voice-pick" onClick={() => void api.setVoice({ voice: v.id }).then((next) => (onChange(next), setOpen(false), setQuery("")))}>
+                  <span className="set-voice-name">{v.name}{v.own && <em>Yours</em>}</span>
+                  {v.description && <span className="set-voice-desc">{v.description}</span>}
+                </button>
+                <button className="tbtn" onClick={() => void preview(v)} aria-label={`Preview ${v.name}`} title="Preview">
+                  <Icon name={playing === v.id ? "stop" : "play"} size={13} weight="bold" />
+                </button>
+                <span className="set-voice-tick">{v.id === chosen && <Icon name="check" size={15} weight="bold" />}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -132,7 +158,7 @@ function Pronunciations({ settings, onChange }: { settings: Settings; onChange: 
   const dirty = text !== toText(settings.voice.pronunciations);
   return (
     <details className="set-pron">
-      <summary>Pronunciations</summary>
+      <summary><span><b>Pronunciations</b><small>How the narrator says names and jargon</small></span><Icon name="chevron" size={14} /></summary>
       <p className="set-hint">One per line: <code>term = how to say it</code>. Only the voice changes; the screen keeps the real word. Built in: {Object.keys(settings.voice.defaults).join(", ")}.</p>
       <textarea rows={4} spellCheck={false} value={text} placeholder={"Applicant API = applicant A P I\nnonce = nonss"} onChange={(e) => (setText(e.target.value), setSaved(false))} aria-label="Pronunciations" />
       <div className="set-key-row">
@@ -143,15 +169,27 @@ function Pronunciations({ settings, onChange }: { settings: Settings; onChange: 
   );
 }
 
+type Tab = "narrator" | "claude" | "appearance";
+const THEMES: [Theme, string, string, "screen" | "sun" | "moon"][] = [
+  ["system", "System", "Follows your computer", "screen"],
+  ["light", "Light", "Always light", "sun"],
+  ["dark", "Dark", "Always dark", "moon"],
+];
+const SPEEDS = [0.8, 0.9, 1, 1.1, 1.25];
+
 /** Settings: the narrator (provider, key, voice, speed, expression) and how Docent reaches Claude. */
 export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const [s, setS] = useState<Settings | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useState<Tab>("narrator");
+  const theme = useStore(themeStore);
   useEffect(() => {
     api.settings().then(setS, (e: Error) => setError(e.message));
   }, []);
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
@@ -160,54 +198,96 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
     setS(next);
     invalidateAll();
   };
+  const fail = (e: Error) => setError(e.message);
 
   return (
     <div className="settings-over" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <section className="float settings" role="dialog" aria-label="Settings">
-        <div className="set-head">
-          <h2>Settings</h2>
-          <button className="tbtn" onClick={onClose} aria-label="Close"><Icon name="close" size={16} /></button>
-        </div>
-        {error && <p className="set-error">{error}</p>}
-        {s && (
-          <>
-            <div className="set-section">
-              <h3>Narrator</h3>
-              <div className="set-seg" role="radiogroup" aria-label="Voice provider">
-                {PROVIDERS.map((p) => (
-                  <button key={p.id} role="radio" aria-checked={s.voice.provider === p.id} onClick={() => void api.setVoice({ provider: p.id }).then(update)}>
-                    {p.name}{s.voice.keys[p.id] ? "" : " · no key"}
-                  </button>
+      <section className="settings" role="dialog" aria-modal="true" aria-labelledby="set-title">
+        <nav className="set-nav" aria-label="Settings sections">
+          <h2 id="set-title">Settings</h2>
+          {([["narrator", "Narrator", "sound"], ["claude", "Claude", "claude"], ["appearance", "Appearance", "sun"]] as const).map(([id, name, icon]) => (
+            <button key={id} className={tab === id ? "on" : ""} aria-current={tab === id} onClick={() => setTab(id)}>
+              <Icon name={icon} size={16} />{name}
+            </button>
+          ))}
+          <p className="set-foot"><Icon name="lock" size={13} /><span>Keys stay in Docent's own <code>.env</code> on this computer, never in a repo, and are never shown in full.</span></p>
+        </nav>
+        <div className="set-body">
+          <button className="set-x" onClick={onClose} aria-label="Close"><Icon name="close" size={16} /></button>
+          {error && <p className="set-error" role="alert">{error}</p>}
+          {!s && !error && tab !== "appearance" && <p className="set-hint">Loading…</p>}
+          {s && tab === "narrator" && (
+            <>
+              <header className="set-h"><h3>Narrator</h3><p>The voice that reads the tour. Only the narration text is sent to the voice service.</p></header>
+              <div className="set-group">
+                <div className="set-label">Voice service</div>
+                <div className="set-tiles" role="radiogroup" aria-label="Voice service">
+                  {PROVIDERS.map((p) => (
+                    <button key={p.id} role="radio" aria-checked={s.voice.provider === p.id} onClick={() => void api.setVoice({ provider: p.id }).then(update, fail)}>
+                      <b>{p.name}</b>
+                      <span className={s.voice.keys[p.id] ? "ok" : ""}>{s.voice.keys[p.id] ? "Key saved" : "No key yet"}</span>
+                    </button>
+                  ))}
+                </div>
+                {PROVIDERS.filter((p) => p.id === s.voice.provider).map((p) => (
+                  <KeyField key={p.id} label={`${p.name} API key`} saved={s.voice.keys[p.id]} url={p.keyUrl} onSave={async (k) => update(await api.setKey(p.id, k))} />
                 ))}
               </div>
-              {PROVIDERS.filter((p) => p.id === s.voice.provider).map((p) => (
-                <KeyField key={p.id} label={`${p.name} API key`} saved={s.voice.keys[p.id]} url={p.keyUrl} onSave={async (k) => update(await api.setKey(p.id, k))} />
-              ))}
-              <div className="set-label">Voice</div>
-              <VoicePicker settings={s} onChange={update} />
-              <div className="set-row">
-                <label htmlFor="set-speed">Speed</label>
-                <input id="set-speed" type="range" min={0.8} max={1.25} step={0.05} value={s.voice.speed} onChange={(e) => setS({ ...s, voice: { ...s.voice, speed: Number(e.target.value) } })} onPointerUp={(e) => void api.setVoice({ speed: Number((e.target as HTMLInputElement).value) }).then(update)} onKeyUp={(e) => void api.setVoice({ speed: Number((e.target as HTMLInputElement).value) }).then(update)} />
-                <span className="set-val">{s.voice.speed.toFixed(2)}×</span>
+              <div className="set-group">
+                <div className="set-label">Voice</div>
+                <VoicePicker settings={s} onChange={update} />
               </div>
-              <Pronunciations settings={s} onChange={update} />
-              <label className="set-row set-toggle">
-                <input type="checkbox" checked={s.voice.expressive} onChange={(e) => void api.setVoice({ expressive: e.target.checked }).then(update)} />
-                <span><b>Expressive</b> · the narrator sounds calm when explaining, curious when asking, concerned about risks</span>
-              </label>
-            </div>
-            <div className="set-section">
-              <h3>Claude</h3>
-              <div className="set-seg" role="radiogroup" aria-label="How Docent reaches Claude">
-                <button role="radio" aria-checked={s.claude.mode === "claude-code"} onClick={() => void api.setClaude("claude-code").then(update)}>Your subscription</button>
-                <button role="radio" aria-checked={s.claude.mode === "api"} onClick={() => void api.setClaude("api").then(update)}>API key</button>
+              <div className="set-group">
+                <div className="set-label">Delivery</div>
+                <div className="set-line">
+                  <span><b>Speed</b><small>How fast the voice speaks; the tour's 1.25× button adds on top</small></span>
+                  <div className="set-seg" role="radiogroup" aria-label="Speed">
+                    {SPEEDS.map((v) => (
+                      <button key={v} role="radio" aria-checked={Math.abs(s.voice.speed - v) < 0.01} onClick={() => void api.setVoice({ speed: v }).then(update, fail)}>{v}×</button>
+                    ))}
+                  </div>
+                </div>
+                <label className="set-line">
+                  <span><b>Expressive</b><small>Calm when explaining, curious when asking, concerned about risks</small></span>
+                  <input className="set-switch" type="checkbox" role="switch" checked={s.voice.expressive} onChange={(e) => void api.setVoice({ expressive: e.target.checked }).then(update, fail)} />
+                </label>
+                <Pronunciations settings={s} onChange={update} />
               </div>
-              <p className="set-hint">{s.claude.describe}</p>
-              {s.claude.mode === "api" && <KeyField label="Anthropic API key" saved={s.claude.apiKey} url="https://console.anthropic.com/settings/keys" onSave={async (k) => update(await api.setKey("anthropic", k))} />}
-            </div>
-            <p className="set-foot">Keys are saved in Docent's own <code>.env</code> (never committed, never in an analyzed repo) and never shown again in full.</p>
-          </>
-        )}
+            </>
+          )}
+          {tab === "appearance" && (
+            <>
+              <header className="set-h"><h3>Appearance</h3><p>Light or dark, for this browser. The button next to the gear steps through these too.</p></header>
+              <div className="set-group">
+                <div className="set-tiles three" role="radiogroup" aria-label="Theme">
+                  {THEMES.map(([id, name, hint, icon]) => (
+                    <button key={id} role="radio" aria-checked={theme === id} onClick={() => themeStore.set(id)}>
+                      <Icon name={icon} size={18} />
+                      <b>{name}</b><span>{hint}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+          {s && tab === "claude" && (
+            <>
+              <header className="set-h"><h3>Claude</h3><p>Docent reads your code with Claude. Choose how it signs in.</p></header>
+              <div className="set-group">
+                <div className="set-tiles col" role="radiogroup" aria-label="How Docent reaches Claude">
+                  <button role="radio" aria-checked={s.claude.mode === "claude-code"} onClick={() => void api.setClaude("claude-code").then(update, fail)}>
+                    <b>Your subscription</b><span>Uses Claude Code on this computer; nothing to paste</span>
+                  </button>
+                  <button role="radio" aria-checked={s.claude.mode === "api"} onClick={() => void api.setClaude("api").then(update, fail)}>
+                    <b>API key</b><span>Pay per use with an Anthropic key</span>
+                  </button>
+                </div>
+                <p className="set-hint">{s.claude.describe}</p>
+                {s.claude.mode === "api" && <KeyField label="Anthropic API key" saved={s.claude.apiKey} url="https://console.anthropic.com/settings/keys" onSave={async (k) => update(await api.setKey("anthropic", k))} />}
+              </div>
+            </>
+          )}
+        </div>
       </section>
     </div>
   );

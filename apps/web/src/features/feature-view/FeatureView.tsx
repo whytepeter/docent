@@ -67,7 +67,7 @@ export function FeatureCanvas({ id }: { id: string }) {
         <div>
           <h2>{data.feature.name}</h2>
           <p>{data.feature.summary}</p>
-          <p className="muted">Not verified yet. Claude will trace it end to end and every claim will be checked against the code.</p>
+          <p className="muted">Not checked yet. Docent traces it end to end and checks every claim against the code; watching its episode does this first.</p>
           <button className="primary-btn" disabled={running} onClick={() => void startVerify(id)}>{running ? "Verifying…" : "Verify this feature"}</button>
         </div>
       </div>
@@ -128,9 +128,9 @@ export function FeatureInspector({ id }: { id: string }) {
           </div>
         )}
       </div>
+      <button className="watch" onClick={() => navigate({ view: "episode", id })}><Icon name="play" size={13} weight="bold" />Watch the episode</button>
       {analysis ? (
         <>
-          <button className="watch" onClick={() => navigate({ view: "episode", id })}><Icon name="play" size={13} weight="bold" />Watch the episode</button>
           <div className="analogy"><b>Think of it like this.</b> {analysis.analogy}</div>
           <p className="status-reason">{analysis.statusReason}</p>
           <Group title="What must stay true" count={by("invariant").length} open><Claims claims={by("invariant")} /></Group>
@@ -155,7 +155,7 @@ export function FeatureInspector({ id }: { id: string }) {
           </Group>
         </>
       ) : (
-        <p className="feature-summary muted">Not verified yet.</p>
+        <p className="feature-summary muted">Not checked yet. Watching the episode checks it first.</p>
       )}
       <Group title="Files" count={feature.files.length}>
         {feature.files.map((f) => (
@@ -165,7 +165,7 @@ export function FeatureInspector({ id }: { id: string }) {
         ))}
       </Group>
       <div className="i-actions">
-        <button className="link" disabled={running} onClick={() => void startVerify(id)}>{analysis ? (data.stale ? "Re-verify (code changed)" : "Verify again") : "Verify this feature"}</button>
+        <button className="link" disabled={running} onClick={() => void startVerify(id)}>{analysis ? (data.stale ? "Check again (code changed)" : "Check again") : "Check this feature"}</button>
         {analysis && <span className="empty">{analysis.model} · {analysis.generatedAt.slice(0, 10)}</span>}
       </div>
     </>

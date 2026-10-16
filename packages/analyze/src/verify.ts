@@ -69,7 +69,12 @@ export async function verifyAll(
   facts: Facts,
   root: string,
   features: Feature[],
-  { concurrency = 3, onDone, signal }: { concurrency?: number; onDone?: (id: string, result: FeatureAnalysis | Error) => void; signal?: AbortSignal } = {},
+  { concurrency = 3, onStart, onDone, signal }: {
+    concurrency?: number;
+    onStart?: (id: string) => void;
+    onDone?: (id: string, result: FeatureAnalysis | Error) => void;
+    signal?: AbortSignal;
+  } = {},
 ): Promise<Map<string, FeatureAnalysis | Error>> {
   const results = new Map<string, FeatureAnalysis | Error>();
   const queue = [...features];
@@ -77,6 +82,7 @@ export async function verifyAll(
     // A cancelled run stops taking new features; the ones in flight are killed through the signal.
     for (let f = queue.shift(); f && !signal?.aborted; f = queue.shift()) {
       try {
+        onStart?.(f.id);
         const r = await verifyFeature(llm, facts, root, f, signal);
         results.set(f.id, r);
         onDone?.(f.id, r);

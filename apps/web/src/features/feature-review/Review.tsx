@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Feature } from "@docent/contracts";
 import { api } from "../../shared/api/client.ts";
-import { refreshFeatures, useFeatures } from "../../shared/api/features.ts";
+import { refreshFeatures, startPrepare, useFeatures } from "../../shared/api/features.ts";
 import { Diagram } from "../../shared/graph/index.ts";
 import { headerStore } from "../../shared/state/header.ts";
 import { inspectorStore } from "../../shared/state/inspector.ts";
@@ -39,7 +39,7 @@ export function ReviewCanvas() {
   return <Diagram nodes={graph.nodes} edges={graph.edges} sections={graph.sections} quietEdges label="Proposed features" />;
 }
 
-/** The editor: rename, change kind, move files, merge, remove; then approve. */
+/** The optional editor: rename, change kind, move files, merge, remove. Nothing waits on it. */
 export function ReviewPanel() {
   const state = useFeatures();
   const { draft, selected, dirty } = useStore(reviewStore);
@@ -53,7 +53,8 @@ export function ReviewPanel() {
     try {
       await api.saveFeatures(draft, approve);
       reviewStore.set({ draft: null, selected: null, dirty: false });
-      await refreshFeatures();
+      // Features whose files changed are checked again straight away; the rest stay as they are.
+      await startPrepare();
       if (approve) navigate({ view: "system" });
     } finally {
       setSaving(false);
@@ -67,7 +68,7 @@ export function ReviewPanel() {
       <div className="i-head">
         <div className="kick">Review</div>
         <div className="i-title">Is this how you'd describe the app?</div>
-        <p className="review-lead">Claude proposed {draft.length} features from the code. Fix anything that's off, then approve. Approved features stay fixed so the tour doesn't shift under you.</p>
+        <p className="review-lead">Docent found {draft.length} features in the code. If one is named oddly or a file sits in the wrong place, fix it here. Optional: everything already works without it. Features you change are checked again.</p>
       </div>
 
       {feature ? (
@@ -145,8 +146,8 @@ export function ReviewPanel() {
       )}
 
       <div className="review-actions">
-        <button className="primary-btn" disabled={saving} onClick={() => void save(true)}>{saving ? "Saving…" : "Approve the map"}</button>
-        {dirty && <button className="ghost-btn" disabled={saving} onClick={() => void save(false)}>Save for later</button>}
+        <button className="primary-btn" disabled={saving || !dirty} onClick={() => void save(true)}>{saving ? "Saving…" : "Save changes"}</button>
+        <button className="ghost-btn" disabled={saving} onClick={() => navigate({ view: "system" })}>{dirty ? "Discard" : "Done"}</button>
       </div>
     </div>
   );

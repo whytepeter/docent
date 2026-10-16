@@ -145,6 +145,14 @@ Runs on your Claude subscription through `packages/llm` (an API key is optional)
 - Cancel a running job (a mis-click started a duplicate verification with no way to stop it).
 - Unused-export detection: today only files nothing imports are flagged; a file re-exported by a barrel but never used (e.g. `components/base/UploadFile.tsx`) is missed. Discovery's guess about it was half right, which is why guesses stay labeled.
 
+### One flow for newcomers (Oct 15, user decision)
+A first-timer shouldn't have to know about discovery, review, approval, verification and episode writing. Now:
+- **One button,** "Learn this codebase", on a codebase's first open: a single `prepare` job finds the features, then checks every one that isn't ready (3 at a time). Features are usable as soon as each is checked.
+- **No approval gate.** The map is used as soon as it's found; "Edit the map" is optional, and saving edits re-checks only the features that changed. (Overrides the brief's "review before anything else runs".)
+- **Episodes make themselves:** opening a feature's episode writes it (or checks the feature first) without a click, on its own lane beside the prepare job. The wait shows what's already known: summary, analogy, the flow.
+- **Waits say what's happening:** every job reports a plain-words stage, the features in flight, and a time estimate refined from real progress; the progress bar moves with time and never goes back.
+- **Pacing:** playback speed (1×, 1.25× default, 1.5×, 1.75×) for voice and text; shorter gaps between steps; the next two clips are fetched ahead, and the first two while the intro shows.
+
 ### M3.5: Ask Docent (chat that explains with the canvas) — first version done
 Built: `/` or the chat button opens a panel scoped to the current view. The server builds the context from the view (facts, the function's code, what verification established for the features it belongs to) and Claude answers with read-only tools. Every paragraph goes through the citation check and the second reader, like verification claims. Progress streams (reading, answering, checking). The diagram publishes its boxes; Claude sees them as short refs (b1, b2…) and can only point at those (P11: no new boxes). "Show me" plays the scene: boxes light, links animate in their real direction, the camera follows, and the panel shrinks to the caption. "Explain simpler" asks again with an analogy first. Threads are kept per view while the app is open.
 Checked on kyc's `submitDocument` view: "What happens if the storage upload fails for one side?" gave 5 labeled paragraphs and a 5-step scene. On its own it found that the other side's upload isn't cancelled (the mockup's finding, labeled inferred), and the second reader caught an overstatement about which errors show a message.

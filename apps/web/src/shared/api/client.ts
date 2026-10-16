@@ -1,4 +1,4 @@
-import type { AnalysisHealth, AskEvent, AskRequest, AreaView, EpisodeState, Settings, VoiceClip, VoiceOption, VoiceProvider, VoiceStatus, Feature, FeatureDetail, FeaturesState, FileView, Health, Job, Overview, SearchHit, SourceSlice, Status, SymbolView, TreeNode, Workspace, PartOf } from "@docent/contracts";
+import type { AnalysisHealth, AskEvent, AskRequest, AreaView, BoardState, EpisodeState, FlowsState, Settings, VoiceClip, VoiceOption, VoiceProvider, VoiceStatus, Feature, FeatureDetail, FeaturesState, FileView, Health, Job, Overview, SearchHit, SourceSlice, Status, SymbolView, TreeNode, Workspace, PartOf } from "@docent/contracts";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   // The server refuses state changes without this header, which other sites can't send.
@@ -56,6 +56,13 @@ export const api = {
   partOf: (file: string, symbol?: string) => request<PartOf>(`/api/part-of?file=${q(file)}${symbol ? `&symbol=${q(symbol)}` : ""}`),
   episode: (id: string) => request<EpisodeState>(`/api/episodes/${q(id)}`),
   writeEpisode: (id: string) => request<Job>(`/api/episodes/${q(id)}/write`, { method: "POST" }),
+  flows: () => request<FlowsState>("/api/flows"),
+  proposeFlows: () => request<Job>("/api/flows/propose", { method: "POST" }),
+  writeOverview: () => request<Job>("/api/overview/write", { method: "POST" }),
+  board: (id: string) => request<BoardState>(`/api/boards/${q(id)}`),
+  writeBoard: (id: string) => request<Job>(`/api/boards/${q(id)}/write`, { method: "POST" }),
+  stopBoard: (id: string) => request<Job | null>(`/api/boards/${q(id)}/stop`, { method: "POST" }),
+  boardVoice: (id: string, at: number) => request<VoiceClip>(`/api/boards/${q(id)}/voice`, json({ at })),
   settings: () => request<Settings>("/api/settings"),
   setKey: (provider: VoiceProvider | "anthropic", key: string | null) => request<Settings>("/api/settings/keys", { ...json({ provider, key }), method: "PUT" }),
   setVoice: (patch: { provider?: VoiceProvider; voice?: string; speed?: number; expressive?: boolean; pronunciations?: Record<string, string> }) => request<Settings>("/api/settings/voice", { ...json(patch), method: "PUT" }),
@@ -65,6 +72,7 @@ export const api = {
   voice: () => request<VoiceStatus>("/api/voice"),
   voiceClip: (id: string, at: number) => request<VoiceClip>(`/api/episodes/${q(id)}/voice`, json({ at })),
   cancelJob: () => request<Job | null>("/api/features/cancel", { method: "POST" }),
+  prepare: () => request<Job>("/api/features/prepare", { method: "POST" }),
   discover: () => request<Job>("/api/features/discover", { method: "POST" }),
   verify: (id?: string) => request<Job>("/api/features/verify", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(id ? { id } : {}) }),
   saveFeatures: (features: Feature[], approve = false) =>

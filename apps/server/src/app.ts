@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { AnalysisService, analysisRoutes } from "./features/analysis/index.ts";
 import { askRoutes } from "./features/ask/index.ts";
+import { BoardService, boardRoutes } from "./features/boards/index.ts";
 import { GraphIndex, graphRoutes } from "./features/graph/index.ts";
 import { RepoService, repoRoutes } from "./features/repo/index.ts";
 import { sourceRoutes } from "./features/source/index.ts";
@@ -26,6 +27,7 @@ function repoApp(repo: RepoService): Hono {
   app.route("/api", analysisRoutes(new AnalysisService(repo)));
   app.route("/api", askRoutes(repo, () => index));
   app.route("/api", voiceRoutes(() => repo.root));
+  app.route("/api", boardRoutes(new BoardService(repo), () => repo.root));
   return app;
 }
 

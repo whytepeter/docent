@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Workspace } from "@docent/contracts";
 import { api } from "../../shared/api/client.ts";
-import { Icon } from "../../shared/ui/index.ts";
+import { Icon, Logo } from "../../shared/ui/index.ts";
 import "./workspace.css";
 
 /** Every view caches data for the open repo, so a fresh page is the honest way to switch. */
@@ -20,6 +20,16 @@ export function OpenRepo({ workspace, onClose }: { workspace: Workspace | undefi
   const [path, setPath] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const close = !busy ? onClose : undefined;
+  useEffect(() => {
+    if (!close) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [close]);
 
   const open = async (folder: string) => {
     setError(null);
@@ -43,17 +53,18 @@ export function OpenRepo({ workspace, onClose }: { workspace: Workspace | undefi
     }
   };
 
+  const current = workspace?.current?.root;
   const recent = workspace?.recent ?? [];
   return (
-    <div className={`open-repo${onClose ? " over" : ""}`} onClick={onClose && ((e) => e.target === e.currentTarget && !busy && onClose())}>
-      <section className="open-card float" aria-label="Open a codebase">
+    <div className={`open-repo${onClose ? " over" : ""}`} onClick={close && ((e) => e.target === e.currentTarget && close())}>
+      <section className="open-card" role="dialog" aria-modal={!!onClose} aria-labelledby="open-title">
         <div className="open-head">
-          <span className="brand-mark" aria-hidden="true">d</span>
+          <span className="open-mark" aria-hidden="true"><Logo size={42} /></span>
           <div>
-            <h1>Open a codebase</h1>
-            <p>Docent reads the folder and never writes to it.</p>
+            <h1 id="open-title">Open a codebase</h1>
+            <p>Docent reads the folder. It never writes to it.</p>
           </div>
-          {onClose && !busy && <button className="tbtn" onClick={onClose} aria-label="Close"><Icon name="close" size={16} /></button>}
+          {close && <button className="open-x" onClick={close} aria-label="Close"><Icon name="close" size={16} /></button>}
         </div>
 
         {busy ? (
@@ -66,19 +77,24 @@ export function OpenRepo({ workspace, onClose }: { workspace: Workspace | undefi
             <button className="open-choose" onClick={() => void choose()} autoFocus>
               <Icon name="folder" size={18} />Choose a folder…
             </button>
-            <form className="open-path" onSubmit={(e) => { e.preventDefault(); if (path.trim()) void open(path); }}>
-              <input value={path} onChange={(e) => setPath(e.target.value)} placeholder="or paste a path, e.g. ~/code/my-app" spellCheck={false} aria-label="Folder path" />
-              <button className="tbtn" type="submit" disabled={!path.trim()}>Open</button>
+            <form className="open-path" onSubmit={(e) => { e.preventDefault(); if (path.trim()) void open(path.trim()); }}>
+              <input value={path} onChange={(e) => setPath(e.target.value)} placeholder="or paste a path, like ~/code/my-app" spellCheck={false} autoCapitalize="off" autoCorrect="off" aria-label="Folder path" />
+              <button type="submit" disabled={!path.trim()} aria-label="Open this path" title="Open this path"><Icon name="send" size={15} weight="bold" /></button>
             </form>
             {error && <p className="open-error" role="alert">{error}</p>}
             {recent.length > 0 && (
               <div className="open-recent">
                 <div className="open-label">Recent</div>
-                {recent.map((r) => (
-                  <button key={r.root} className="open-item" onClick={() => void open(r.root)}>
-                    <b>{r.name}</b><span>{home(r.root)}</span>
-                  </button>
-                ))}
+                {recent.map((r) => {
+                  const here = r.root === current;
+                  return (
+                    <button key={r.root} className={`open-item${here ? " here" : ""}`} onClick={() => (here && close ? close() : void open(r.root))} title={here ? "Open now" : `Open ${r.name}`}>
+                      <span className="open-ava" aria-hidden="true">{r.name.slice(0, 1).toUpperCase()}</span>
+                      <span className="open-item-t"><b>{r.name}</b><span>{home(r.root)}</span></span>
+                      {here ? <em>open now</em> : <Icon name="chevron" size={14} />}
+                    </button>
+                  );
+                })}
               </div>
             )}
           </>

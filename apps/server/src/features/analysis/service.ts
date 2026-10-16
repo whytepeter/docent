@@ -6,6 +6,14 @@ import type { AnalysisHealth, EpisodeState, FeatureCard, FeaturesState, Job, Par
 import { pickProvider } from "@docent/llm";
 import type { RepoService } from "../repo/index.ts";
 
+/** Typical times, for estimates before real progress refines them (seconds). */
+const DISCOVER_S = 75;
+const VERIFY_S = 150;
+const EPISODE_S = 190;
+const CONCURRENCY = 3;
+const DEFAULT_FEATURES = 12;
+const waves = (n: number) => Math.ceil(n / CONCURRENCY);
+
 /**
  * Discovery and verification as background jobs, one at a time. The app polls the job;
  * results land in the repo's cache as each feature finishes.
@@ -13,6 +21,8 @@ import type { RepoService } from "../repo/index.ts";
 export class AnalysisService {
   private job: Job | null = null;
   private abort: AbortController | null = null;
+  private episodeJob: Job | null = null;
+  private episodeAbort: AbortController | null = null;
 
   constructor(private readonly repo: RepoService) {}
 
@@ -57,7 +67,7 @@ export class AnalysisService {
       const [from = "", to = ""] = k.split("|");
       return { from, to, count };
     });
-    return { map, cards, job: this.job, provider, links };
+    return { map, cards, job: this.job, episodeJob: this.episodeJob, provider, links };
   }
 
   detail(id: string) {
@@ -76,14 +86,21 @@ export class AnalysisService {
   }
 
   /** Writes a feature's episode in the background: the narration, scenes and claims, checked like verification. */
+  /**
+   * Writes a feature's episode in the background. It has its own lane, so watching a feature never waits
+   * behind the job that's getting the rest of the codebase ready.
+   */
   startEpisode(id: string): Job {
-    if (this.running()) return this.job!;
+    if (this.episodeJob && !this.episodeJob.finishedAt) return this.episodeJob;
     const feature = loadFeatureMap(this.root)?.features.find((f) => f.id === id);
     const analysis = loadAnalysis(this.root, id);
-    if (!feature || !analysis) throw new Error("Verify the feature before writing its episode");
-    const abort = (this.abort = new AbortController());
-    const job: Job = { kind: "episode", startedAt: new Date().toISOString(), total: 1, done: [], failed: [], message: `Writing the episode for ${feature.name}` };
-    this.job = job;
+    if (!feature || !analysis) throw new Error("This feature hasn't been checked yet");
+    const abort = (this.episodeAbort = new AbortController());
+    const job: Job = {
+      kind: "episode", featureId: id, startedAt: new Date().toISOString(), total: 1, done: [], failed: [],
+      message: `Writing the episode for ${feature.name}`, stage: "Writing the lesson from what was checked", active: [feature.name], estimateSeconds: EPISODE_S,
+    };
+    this.episodeJob = job;
     void (async () => {
       try {
         saveEpisode(this.root, await writeEpisode(pickProvider(), this.repo.facts, this.root, feature, analysis, { signal: abort.signal }));
@@ -95,6 +112,7 @@ export class AnalysisService {
         job.message = "Couldn't write the episode";
       } finally {
         job.finishedAt ??= new Date().toISOString();
+        job.active = [];
       }
     })();
     return job;
@@ -149,31 +167,84 @@ export class AnalysisService {
     return !!this.job && !this.job.finishedAt;
   }
 
-  /** Stops the running job: Claude sessions in flight are killed, finished features stay saved. */
+  /** Stops the running work: Claude sessions in flight are killed, features already finished stay saved. */
   cancel(): Job | null {
-    if (!this.running() || !this.abort) return this.job;
-    this.abort.abort();
-    this.job!.cancelled = true;
-    this.job!.message = this.job!.kind === "verify" ? `Cancelled after ${this.job!.done.length} of ${this.job!.total}` : "Discovery cancelled";
-    this.job!.finishedAt = new Date().toISOString();
+    for (const [job, abort] of [[this.episodeJob, this.episodeAbort], [this.job, this.abort]] as const) {
+      if (!job || job.finishedAt || !abort) continue;
+      abort.abort();
+      job.cancelled = true;
+      job.active = [];
+      job.message = job.kind === "episode" ? "Stopped writing the episode" : job.done.length ? `Stopped · ${job.done.length} of ${job.total} ready` : "Stopped";
+      job.finishedAt = new Date().toISOString();
+    }
     return this.job;
+  }
+
+  /** A feature is ready when it was checked against this code and went through the second reader. */
+  private ready(feature: Feature): boolean {
+    const a = loadAnalysis(this.root, feature.id);
+    return !!a && a.filesHash === filesHash(this.repo.facts, feature.files) && a.claims.some((c) => c.review);
+  }
+
+  /**
+   * The one thing a newcomer has to do: find the features (if that hasn't happened) and check every one that
+   * isn't ready, a few at a time. Each feature can be explored as soon as it's done.
+   */
+  startPrepare(): Job {
+    if (this.running()) return this.job!;
+    const abort = (this.abort = new AbortController());
+    const existing = loadFeatureMap(this.root);
+    const pending = existing?.features.filter((f) => !this.ready(f)) ?? [];
+    const job: Job = {
+      kind: "prepare", startedAt: new Date().toISOString(), total: existing ? pending.length : 0, done: [], failed: [],
+      message: existing ? "Checking each feature against the code" : "Finding what this codebase does",
+      stage: existing ? "Checking each feature against the code" : "Reading the code and finding its features",
+      active: [], estimateSeconds: (existing ? 0 : DISCOVER_S) + waves(existing ? pending.length : DEFAULT_FEATURES) * VERIFY_S,
+    };
+    this.job = job;
+    void (async () => {
+      try {
+        let features = pending;
+        if (!existing) {
+          const map = await discoverFeatures(pickProvider(), this.repo.facts, this.root, abort.signal);
+          saveFeatureMap(this.root, map);
+          features = map.features;
+          const elapsed = (Date.now() - Date.parse(job.startedAt)) / 1000;
+          Object.assign(job, { total: features.length, stage: "Checking each feature against the code", message: `Found ${features.length} features`, estimateSeconds: elapsed + waves(features.length) * VERIFY_S });
+        }
+        await this.verifyInto(job, features, abort);
+        if (!abort.signal.aborted) {
+          job.message = !job.total ? "Everything is already ready"
+            : job.failed.length ? `${job.done.length} of ${job.total} ready · ${job.failed.length} couldn't be checked`
+            : `All ${job.total} features ready`;
+        }
+      } catch (e) {
+        if (abort.signal.aborted) return;
+        job.error = (e as Error).message;
+        job.message = "Couldn't finish getting the codebase ready";
+      } finally {
+        job.finishedAt ??= new Date().toISOString();
+        job.active = [];
+      }
+    })();
+    return job;
   }
 
   startDiscovery(): Job {
     if (this.running()) return this.job!;
     const abort = (this.abort = new AbortController());
-    const job: Job = { kind: "discover", startedAt: new Date().toISOString(), total: 1, done: [], failed: [], message: "Reading the facts and proposing features" };
+    const job: Job = { kind: "discover", startedAt: new Date().toISOString(), total: 1, done: [], failed: [], message: "Finding what this codebase does", stage: "Reading the code and finding its features", estimateSeconds: DISCOVER_S };
     this.job = job;
     void (async () => {
       try {
         const map = await discoverFeatures(pickProvider(), this.repo.facts, this.root, abort.signal);
         saveFeatureMap(this.root, map);
         job.done.push("map");
-        job.message = `Proposed ${map.features.length} features`;
+        job.message = `Found ${map.features.length} features`;
       } catch (e) {
         if (abort.signal.aborted) return;
         job.error = (e as Error).message;
-        job.message = "Discovery failed";
+        job.message = "Couldn't find the features";
       } finally {
         job.finishedAt ??= new Date().toISOString();
       }
@@ -181,33 +252,57 @@ export class AnalysisService {
     return job;
   }
 
+  /** Check one feature again (or every feature): the same work as preparing, without finding features. */
   startVerify(only?: string): Job {
     if (this.running()) return this.job!;
     const map = loadFeatureMap(this.root);
     const features = (map?.features ?? []).filter((f) => !only || f.id === only);
     const abort = (this.abort = new AbortController());
-    const job: Job = { kind: "verify", startedAt: new Date().toISOString(), total: features.length, done: [], failed: [], message: `Verifying ${features.length} features` };
+    const job: Job = {
+      kind: "verify", startedAt: new Date().toISOString(), total: features.length, done: [], failed: [],
+      message: features.length === 1 ? `Checking ${features[0]!.name}` : `Checking ${features.length} features`,
+      stage: "Checking against the code", active: [], estimateSeconds: waves(features.length) * VERIFY_S,
+    };
     this.job = job;
     void (async () => {
       try {
-        await verifyAll(pickProvider(), this.repo.facts, this.root, features, {
-          signal: abort.signal,
-          onDone: (id, r) => {
-            if (r instanceof Error) job.failed.push({ id, error: r.message });
-            else {
-              saveAnalysis(this.root, r);
-              job.done.push(id);
-            }
-            if (!abort.signal.aborted) job.message = `Verified ${job.done.length} of ${job.total}`;
-          },
-        });
+        await this.verifyInto(job, features, abort);
+        if (!abort.signal.aborted) job.message = features.length === 1 ? (job.done.length ? "Ready" : "Couldn't check it") : `${job.done.length} of ${job.total} ready`;
       } catch (e) {
         if (!abort.signal.aborted) job.error = (e as Error).message;
       } finally {
         job.finishedAt ??= new Date().toISOString();
+        job.active = [];
       }
     })();
     return job;
+  }
+
+  /** Runs verification, keeping the job's in-flight names, progress and time estimate current. */
+  private async verifyInto(job: Job, features: Feature[], abort: AbortController): Promise<void> {
+    const names = new Map(features.map((f) => [f.id, f.name]));
+    const began = Date.now();
+    await verifyAll(pickProvider(), this.repo.facts, this.root, features, {
+      signal: abort.signal,
+      onStart: (id) => {
+        if (!abort.signal.aborted) job.active = [...(job.active ?? []), names.get(id) ?? id];
+      },
+      onDone: (id, r) => {
+        job.active = (job.active ?? []).filter((n) => n !== names.get(id));
+        if (r instanceof Error) job.failed.push({ id, error: r.message });
+        else {
+          saveAnalysis(this.root, r);
+          job.done.push(id);
+        }
+        if (abort.signal.aborted) return;
+        // Refine the estimate from the real pace so far.
+        const finished = job.done.length + job.failed.length;
+        const perFeature = (Date.now() - began) / 1000 / finished;
+        const elapsed = (Date.now() - Date.parse(job.startedAt)) / 1000;
+        job.estimateSeconds = Math.round(elapsed + (features.length - finished) * perFeature);
+        job.message = `${job.done.length} of ${job.total} ready`;
+      },
+    });
   }
 
   /** Save the user's edits to the map. Only real files survive; every source file stays accounted for. */

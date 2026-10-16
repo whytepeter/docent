@@ -1,6 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { repoCacheDir } from "@docent/extract";
+import type { Board, FlowList } from "./board.ts";
+import type { ProjectOverview } from "./overview.ts";
 import type { Episode } from "./episode.ts";
 import type { FeatureAnalysis, FeatureMap } from "./types.ts";
 
@@ -57,4 +59,43 @@ export function loadEpisode(root: string, id: string): Episode | null {
   } catch {
     return null;
   }
+}
+
+const flowsFile = (root: string) => join(repoCacheDir(root), "flows.json");
+const boardDir = (root: string) => {
+  const dir = join(repoCacheDir(root), "boards");
+  mkdirSync(dir, { recursive: true });
+  return dir;
+};
+
+export function loadFlows(root: string): FlowList | null {
+  try {
+    return JSON.parse(readFileSync(flowsFile(root), "utf8")) as FlowList;
+  } catch {
+    return null;
+  }
+}
+export function saveFlows(root: string, f: FlowList): void {
+  writeFileSync(flowsFile(root), JSON.stringify(f, null, 2));
+}
+const overviewFile = (root: string) => join(repoCacheDir(root), "overview.json");
+export function loadOverview(root: string): ProjectOverview | null {
+  try {
+    return JSON.parse(readFileSync(overviewFile(root), "utf8")) as ProjectOverview;
+  } catch {
+    return null;
+  }
+}
+export function saveOverview(root: string, o: ProjectOverview): void {
+  writeFileSync(overviewFile(root), JSON.stringify(o, null, 2));
+}
+export function loadBoard(root: string, id: string): Board | null {
+  try {
+    return JSON.parse(readFileSync(join(boardDir(root), `${id}.json`), "utf8")) as Board;
+  } catch {
+    return null;
+  }
+}
+export function saveBoard(root: string, b: Board): void {
+  writeFileSync(join(boardDir(root), `${b.flowId}.json`), JSON.stringify(b, null, 2));
 }

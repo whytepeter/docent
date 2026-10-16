@@ -2,7 +2,7 @@ import { useEffect, useMemo } from "react";
 import type { Overview } from "@docent/contracts";
 import { api } from "../../shared/api/client.ts";
 import { useQuery } from "../../shared/api/useQuery.ts";
-import { startDiscovery, startVerify, useFeatures } from "../../shared/api/features.ts";
+import { startPrepare, useFeatures } from "../../shared/api/features.ts";
 import { layoutFeatureLanes } from "../feature-map/index.ts";
 import { cardHeight, Diagram, lanes } from "../../shared/graph/index.ts";
 import { headerStore } from "../../shared/state/header.ts";
@@ -45,33 +45,32 @@ export function SystemCanvas() {
         <h1>{data?.repo.name}</h1>
         {!map && (
           <>
-            <p>{data?.areas.length} areas grouped by folder. Let Claude read the code and find the real features, or start where the app starts.</p>
+            <p>New to this code? Docent reads it, finds what it does for its users, and checks every part against the code, so nothing it tells you is a guess dressed up as fact. Takes about {Math.max(10, Math.round((data?.counts.files ?? 100) / 12))} minutes; you can start exploring as soon as the first part is ready.</p>
             <div className="welcome-actions">
-              <button className="start" disabled={running} onClick={() => void startDiscovery()}>
-                {running ? "Finding features…" : "Find the features"} <i aria-hidden="true">→</i>
+              <button className="start" disabled={running} onClick={() => void startPrepare()}>
+                {running ? "Getting it ready…" : "Learn this codebase"} <i aria-hidden="true">→</i>
               </button>
-              {entry && <button className="ghost-btn" onClick={() => navigate({ view: "file", path: entry.file })}>Start at {entry.file.split("/").pop()}</button>}
+              {entry && <button className="ghost-btn" onClick={() => navigate({ view: "file", path: entry.file })}>Or start at {entry.file.split("/").pop()}</button>}
             </div>
           </>
         )}
-        {map?.state === "proposed" && (
+        {map && (
           <>
-            <p>Claude proposed {map.features.length} features. Check them before anything else builds on them: rename, merge or move files.</p>
+            <p>
+              {verified === map.features.length
+                ? `${map.features.length} features, all checked against the code. Open one to see how it works, or watch its episode.`
+                : running
+                  ? `${verified} of ${map.features.length} features ready. Open any that's ready while the rest are checked.`
+                  : `${map.features.length} features${verified ? `, ${verified} ready` : ""}. Point at one to see what it depends on, click to open it.`}
+            </p>
             <div className="welcome-actions">
-              <button className="start" onClick={() => navigate({ view: "review" })}>Review the map <i aria-hidden="true">→</i></button>
-            </div>
-          </>
-        )}
-        {map?.state === "approved" && (
-          <>
-            <p>{map.features.length} features{verified ? `, ${verified} verified` : ""}. Point at one to see what it depends on, click to open it.</p>
-            {verified < map.features.length && (
-              <div className="welcome-actions">
-                <button className="start" disabled={running} onClick={() => void startVerify()}>
-                  {running ? "Verifying…" : verified ? "Verify the rest" : "Verify every feature"} <i aria-hidden="true">→</i>
+              {verified < map.features.length && !running && (
+                <button className="start" onClick={() => void startPrepare()}>
+                  {verified ? "Get the rest ready" : "Get every feature ready"} <i aria-hidden="true">→</i>
                 </button>
-              </div>
-            )}
+              )}
+              <button className="ghost-btn" onClick={() => navigate({ view: "review" })}>Edit the map</button>
+            </div>
           </>
         )}
       </div>

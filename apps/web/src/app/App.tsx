@@ -1,72 +1,33 @@
-import { Fragment, useEffect, useState } from "react";
-import type { Route } from "@docent/contracts";
-import { AreaCanvas, AreaInspector } from "../features/area-view/index.ts";
-import { AskPanel } from "../features/ask/index.ts";
-import { SettingsPanel } from "../features/settings/index.ts";
-import { EpisodeCanvas, EpisodeInspector, ResumeEpisode } from "../features/episode/index.ts";
+import { useEffect, useState, useSyncExternalStore } from "react";
+import { BoardScreen, Tray } from "../features/board/index.ts";
 import { CodeSheet } from "../features/code/index.ts";
-import { FileCanvas, FileInspector } from "../features/file-view/index.ts";
-import { Freshness } from "../features/freshness/index.ts";
-import { FunctionCanvas, FunctionInspector } from "../features/function-view/index.ts";
-import { FeatureCanvas, FeatureInspector } from "../features/feature-view/index.ts";
-import { ReviewCanvas, ReviewPanel } from "../features/feature-review/index.ts";
-import { JobPill } from "../features/jobs/index.ts";
-import { HealthButton } from "../features/health/index.ts";
-import { Navigator } from "../features/navigator/index.ts";
-import { openSearch, SearchPalette } from "../features/search/index.ts";
-import { SystemCanvas, useOverview } from "../features/system-map/index.ts";
+import { Home } from "../features/home/index.ts";
+import { SettingsPanel } from "../features/settings/index.ts";
 import { OpenRepo } from "../features/workspace/index.ts";
 import { api } from "../shared/api/client.ts";
 import { useQuery } from "../shared/api/useQuery.ts";
-import { clampInspector, insets, inspectorVisible, inspectorWidth, PANEL, sidebarStore } from "../shared/state/chrome.ts";
-import { headerStore } from "../shared/state/header.ts";
-import { inspectorStore } from "../shared/state/inspector.ts";
-import { navigate, useRoute } from "../shared/state/router.ts";
-import { useStore } from "../shared/state/store.ts";
-import { Icon } from "../shared/ui/index.ts";
-import "./shell.css";
 
-function views(route: Route) {
-  switch (route.view) {
-    case "fn": return { canvas: <FunctionCanvas id={route.id} />, inspector: <FunctionInspector id={route.id} /> };
-    case "file": return { canvas: <FileCanvas path={route.path} />, inspector: <FileInspector path={route.path} /> };
-    case "area": return { canvas: <AreaCanvas id={route.id} />, inspector: <AreaInspector id={route.id} /> };
-    case "feature": return { canvas: <FeatureCanvas id={route.id} />, inspector: <FeatureInspector id={route.id} /> };
-    case "review": return { canvas: <ReviewCanvas />, inspector: <ReviewPanel /> };
-    case "episode": return { canvas: <EpisodeCanvas id={route.id} />, inspector: <EpisodeInspector id={route.id} /> };
-    default: return { canvas: <SystemCanvas />, inspector: null };
-  }
+/** Two places: the flows of a codebase (#/), and one flow's whiteboard (#/board/<id>). */
+const subscribe = (l: () => void) => (window.addEventListener("hashchange", l), () => window.removeEventListener("hashchange", l));
+function useBoardId(): string | null {
+  const hash = useSyncExternalStore(subscribe, () => window.location.hash);
+  const m = /^#\/board\/(.+)$/.exec(hash);
+  return m ? decodeURIComponent(m[1]!) : null;
 }
+const go = (hash: string) => {
+  if (window.location.hash !== hash) window.location.hash = hash;
+};
 
-const toggleSidebar = () => sidebarStore.set((v) => !v);
-const toggleDetails = () => inspectorStore.set((s) => ({ ...s, open: !s.open }));
-
-/**
- * The whole window is the canvas. Everything else floats above it and gets out of the way:
- * the map on the left, location and search on top, details on the right.
- */
+/** Docent is a whiteboard: pick a flow of the codebase, and it's drawn from the real code to tour, break and defend. */
 export function App() {
-  const route = useRoute();
   const workspace = useQuery("workspace", api.workspace);
+  const boardId = useBoardId();
   const [switching, setSwitching] = useState(false);
-  const [asking, setAsking] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const { data: overview, error } = useOverview();
-  const { open } = useStore(inspectorStore);
-  const sidebarOpen = useStore(sidebarStore);
-  const header = useStore(headerStore);
-  const { canvas, inspector } = views(route);
-  const key = JSON.stringify(route);
-  const detailsShown = open && !!inspector;
-  const panelWidth = useStore(inspectorWidth);
-  const [resizing, setResizing] = useState(false);
-  const inset = insets(sidebarOpen, detailsShown, panelWidth);
+  const [settings, setSettings] = useState(false);
+  const repo = workspace.data?.current;
 
-  useEffect(() => inspectorVisible.set(detailsShown), [detailsShown]);
-
-  // The server shows one codebase for every tab. If it switches (another tab, a restart),
-  // this page's cached views describe the wrong repo, so start over on the new one.
-  const shownRoot = workspace.data?.current?.root;
+  // The server shows one codebase for every tab. If it switches (another tab, a restart), start over on it.
+  const shownRoot = repo?.root;
   useEffect(() => {
     if (!shownRoot) return;
     const check = () => {
@@ -75,114 +36,29 @@ export function App() {
         if (w.current?.root !== shownRoot) window.location.reload();
       }, () => {});
     };
-    const timer = setInterval(check, 4000);
+    const t = setInterval(check, 4000);
     document.addEventListener("visibilitychange", check);
     return () => {
-      clearInterval(timer);
+      clearInterval(t);
       document.removeEventListener("visibilitychange", check);
     };
   }, [shownRoot]);
-
-  // [ toggles the map, ] toggles details, ⌘\ hides or shows all panels (as in Figma).
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.target instanceof Element && e.target.closest("input, textarea, [contenteditable]")) return;
-      if ((e.metaKey || e.ctrlKey) && e.key === "\\") {
-        e.preventDefault();
-        const anyOpen = sidebarStore.get() || inspectorStore.get().open;
-        sidebarStore.set(!anyOpen);
-        inspectorStore.set((s) => ({ ...s, open: !anyOpen }));
-      } else if (!e.metaKey && !e.ctrlKey && !e.altKey && e.key === "[") toggleSidebar();
-      else if (!e.metaKey && !e.ctrlKey && !e.altKey && e.key === "]") toggleDetails();
-      else if (!e.metaKey && !e.ctrlKey && !e.altKey && e.key === "/") (e.preventDefault(), setAsking((v) => !v));
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
+    if (repo) document.title = `${repo.name} · Docent`;
+  }, [repo]);
 
   if (workspace.error) return <div className="center-msg" style={{ height: "100%" }}>Can’t reach the Docent server: {workspace.error.message}</div>;
   if (!workspace.data) return null;
-  if (!workspace.data.current) return <OpenRepo workspace={workspace.data} />;
-  if (error) return <div className="center-msg" style={{ height: "100%" }}>Can’t reach the Docent server: {error.message}</div>;
-
+  if (!repo) return <OpenRepo workspace={workspace.data} />;
   return (
-    <div className="stage" style={{ ["--inset-left" as string]: `${inset.left}px`, ["--inset-right" as string]: `${inset.right}px` }}>
-      <main className="canvas" key={key} aria-label="Canvas">{canvas}</main>
-
-      <Navigator repoName={overview?.repo.name ?? "…"} head={overview?.repo.head ?? null} onOpenRepo={() => setSwitching(true)} />
-
-      <div className="topbar">
-        <div className="float location">
-          <div className="where">
-            {header.crumbs.map((c, i) => (
-              <Fragment key={i}>
-                <button className="crumb" onClick={() => navigate(c.route)}>{c.label}</button>
-                <span className="sep" aria-hidden="true">/</span>
-              </Fragment>
-            ))}
-            <b className={route.view === "file" || route.view === "fn" ? "mono" : ""}>{header.title}</b>
-          </div>
-          <button className="search-pill" onClick={openSearch} aria-label="Search (⌘K)">
-            <Icon name="search" size={15} /><span>Find anything</span><kbd>⌘K</kbd>
-          </button>
-        </div>
-      </div>
-
-      <div className="float corner">
-        <button className="tbtn" aria-pressed={asking} title="Ask Docent ( / )" onClick={() => setAsking((v) => !v)}>
-          <Icon name="ask" />
-        </button>
-        <Freshness />
-        <button className="tbtn" aria-pressed={settingsOpen} title="Settings" aria-label="Settings" onClick={() => setSettingsOpen(true)}>
-          <Icon name="settings" />
-        </button>
-        <HealthButton />
-        {inspector && (
-          <button className="tbtn" aria-pressed={open} title="Details ( ] )" onClick={toggleDetails}>
-            <Icon name="inspector" />
-          </button>
-        )}
-      </div>
-
-      {inspector && (
-        <aside className={`float details${detailsShown ? " shown" : ""}${resizing ? " resizing" : ""}`} style={{ width: panelWidth }} aria-label="Details" aria-hidden={!detailsShown}>
-          <div
-            className="details-resize"
-            role="separator"
-            aria-orientation="vertical"
-            aria-label="Resize the details panel"
-            aria-valuenow={panelWidth}
-            tabIndex={0}
-            title="Drag to resize · double-click to reset"
-            onDoubleClick={() => inspectorWidth.set(PANEL.inspector)}
-            onKeyDown={(e) => {
-              if (e.key === "ArrowLeft") inspectorWidth.set((w) => clampInspector(w + 24));
-              if (e.key === "ArrowRight") inspectorWidth.set((w) => clampInspector(w - 24));
-            }}
-            onPointerDown={(e) => {
-              e.preventDefault();
-              const right = window.innerWidth - PANEL.gap;
-              setResizing(true);
-              const move = (m: PointerEvent) => inspectorWidth.set(clampInspector(right - m.clientX));
-              const up = () => {
-                setResizing(false);
-                window.removeEventListener("pointermove", move);
-                window.removeEventListener("pointerup", up);
-              };
-              window.addEventListener("pointermove", move);
-              window.addEventListener("pointerup", up);
-            }}
-          />
-          <div className="details-in" key={key}>{inspector}</div>
-        </aside>
-      )}
-
-      {asking && route.view !== "review" && route.view !== "episode" ? <AskPanel route={route} onClose={() => setAsking(false)} /> : route.view !== "episode" && <JobPill />}
-      {!asking && <ResumeEpisode onEpisode={route.view === "episode"} />}
-      <CodeSheet />
-      <SearchPalette />
-      {settingsOpen && <SettingsPanel onClose={() => setSettingsOpen(false)} />}
+    <>
+      {boardId
+        ? <BoardScreen key={boardId} id={boardId} repoName={repo.name} onHome={() => go("#/")} onSettings={() => setSettings(true)} />
+        : <Home repoName={repo.name} onOpen={(id) => go(`#/board/${encodeURIComponent(id)}`)} onSwitch={() => setSwitching(true)} onSettings={() => setSettings(true)} />}
+      <Tray current={boardId ?? null} onOpen={(id) => go(`#/board/${encodeURIComponent(id)}`)} />
+      {settings && <SettingsPanel onClose={() => setSettings(false)} />}
       {switching && <OpenRepo workspace={workspace.data} onClose={() => setSwitching(false)} />}
-    </div>
+      <CodeSheet />
+    </>
   );
 }

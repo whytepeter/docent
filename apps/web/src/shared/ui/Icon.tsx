@@ -1,36 +1,50 @@
 import {
-  ArrowClockwise, CaretRight, ChatCircleDots, FolderOpen, Play, Stop, ArrowUp, SpeakerHigh, SpeakerSlash, GearSix, Check, SidebarSimple as SidebarLeft, Cube, FileCode, Function as FnIcon, MagnifyingGlass, SidebarSimple, SquaresFour, TreeStructure, WarningCircle, X,
-  type Icon as PhosphorIcon,
-} from "@phosphor-icons/react";
+  ArrowLeft, ArrowUp, Box, Check, ChevronRight, CircleAlert, FileCode, FolderOpen, LayoutGrid, Lock, Maximize, MessageCircle, Minus, Network, PanelLeft, PanelRight, Pause, Play, Plus, RotateCw, Search, Settings, SkipBack, SkipForward, Sparkles, Square, SquareFunction, Volume2, VolumeX, X, Sun, Moon, Monitor,
+  type LucideIcon,
+} from "lucide-react";
 
-/** Light, precise line icons. One place to map names to the icon set. */
+/** Lucide line icons. One place to map names to the icon set. */
 const ICONS = {
-  search: MagnifyingGlass,
-  warn: WarningCircle,
-  inspector: SidebarSimple,
-  sidebar: SidebarLeft,
+  search: Search,
+  warn: CircleAlert,
+  inspector: PanelRight,
+  sidebar: PanelLeft,
   close: X,
-  refresh: ArrowClockwise,
-  chevron: CaretRight,
-  area: SquaresFour,
+  refresh: RotateCw,
+  chevron: ChevronRight,
+  area: LayoutGrid,
   file: FileCode,
-  fn: FnIcon,
-  component: Cube,
-  system: TreeStructure,
+  fn: SquareFunction,
+  component: Box,
+  system: Network,
   folder: FolderOpen,
-  ask: ChatCircleDots,
+  ask: MessageCircle,
   play: Play,
-  stop: Stop,
+  pause: Pause,
+  stop: Square,
+  prev: SkipBack,
+  next: SkipForward,
   send: ArrowUp,
-  sound: SpeakerHigh,
-  muted: SpeakerSlash,
-  settings: GearSix,
+  sound: Volume2,
+  muted: VolumeX,
+  settings: Settings,
   check: Check,
-} satisfies Record<string, PhosphorIcon>;
+  lock: Lock,
+  claude: Sparkles,
+  plus: Plus,
+  minus: Minus,
+  fit: Maximize,
+  back: ArrowLeft,
+  sun: Sun,
+  moon: Moon,
+  screen: Monitor,
+} satisfies Record<string, LucideIcon>;
 
 export type IconName = keyof typeof ICONS;
 
-export function Icon({ name, size = 17, weight = "regular" }: { name: IconName; size?: number; weight?: "light" | "regular" | "bold" }) {
+const STROKE = { light: 1.5, regular: 1.9, bold: 2.4 } as const;
+
+export function Icon({ name, size = 17, weight = "regular", fill = false }: { name: IconName; size?: number; weight?: keyof typeof STROKE; fill?: boolean }) {
   const C = ICONS[name];
-  return <C size={size} weight={weight} aria-hidden="true" />;
+  return <C size={size} strokeWidth={STROKE[weight]} fill={fill ? "currentColor" : "none"} aria-hidden="true" />;
 }

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Episode, EpisodeState, VoiceClip } from "@docent/contracts";
 import { api } from "../../shared/api/client.ts";
-import { refreshFeatures, useFeatures } from "../../shared/api/features.ts";
+import { refreshFeatures, startEpisode, startVerify, useFeatures } from "../../shared/api/features.ts";
+import { timeLeft, useNow, useProgress } from "../jobs/index.ts";
 import { useQuery } from "../../shared/api/useQuery.ts";
 import { cardHeight, Diagram, hueFromPath, reducedMotion, STEP_LEAD_MS, type DiagramEdge, type DiagramNode } from "../../shared/graph/index.ts";
 import { headerStore } from "../../shared/state/header.ts";
@@ -12,7 +13,7 @@ import { sceneStore } from "../../shared/state/scene.ts";
 import { useStore } from "../../shared/state/store.ts";
 import { Icon, shortPath } from "../../shared/ui/index.ts";
 import { CodeView, openCode } from "../code/index.ts";
-import { duration, flatten, go, openEpisode, playerStore, restart, set, syncScene, voiceStore, type Flat } from "./player.ts";
+import { duration, flatten, go, nextRate, openEpisode, playerStore, rateStore, restart, set, syncScene, voiceStore, WORDS_PER_SECOND, type Flat } from "./player.ts";
 import "./episode.css";
 
 type Claim = Episode["selfCheck"][number]["answer"];
@@ -36,8 +37,9 @@ const LABEL: Record<string, string> = {
 
 export const useEpisode = (id: string) => {
   const s = useFeatures();
-  const job = s?.job?.kind === "episode" ? `${s.job.startedAt}:${s.job.finishedAt ?? ""}` : "";
-  return useQuery(`episode:${id}:${job}`, () => api.episode(id));
+  const job = s?.episodeJob?.featureId === id ? `${s.episodeJob.startedAt}:${s.episodeJob.finishedAt ?? ""}` : "";
+  const ready = s?.cards.find((c) => c.feature.id === id)?.analysis ? "checked" : "";
+  return useQuery(`episode:${id}:${job}:${ready}`, () => api.episode(id));
 };
 
 /** The cast in lanes, left to right in the order things happen. Few boxes, each standing for real code. */
@@ -81,12 +83,11 @@ function Taken({ claim }: { claim: Claim }) {
   return claim.checkNote ? <p className="ep-note">Docent first said “{claim.claimedLabel}”; {claim.checkNote}.</p> : null;
 }
 
-const WORDS_PER_SECOND = 2.6;
-/** How long a finished line stays before the next step. */
-const HOLD_MS = 1100;
+/** How long a finished line stays before the next step (at 1×; shorter at higher speeds). */
+const HOLD_MS = 450;
 
 /** Longest wait for a step's voice clip before the line plays at the estimated pace instead. */
-const CLIP_WAIT_MS = 8000;
+const CLIP_WAIT_MS = 4000;
 
 /**
  * The narration appears word by word while the episode plays, and the step moves on when the line is done,
@@ -95,7 +96,7 @@ const CLIP_WAIT_MS = 8000;
  * playing again carries on from that word. Words not yet said keep their place, so the bar never jumps.
  * Stepping by hand, or reduced motion, shows the whole line at once.
  */
-function Narration({ text, playing, clip, onDone }: { text: string; playing: boolean; clip: VoiceClip | null | "loading"; onDone: () => void }) {
+function Narration({ text, playing, clip, rate, onDone }: { text: string; playing: boolean; clip: VoiceClip | null | "loading"; rate: number; onDone: () => void }) {
   const words = useMemo(() => text.split(/(\s+)/), [text]);
   const total = words.filter((w) => w.trim()).length;
   const [shown, setShown] = useState(playing && !reducedMotion() ? 0 : total);
@@ -115,6 +116,10 @@ function Narration({ text, playing, clip, onDone }: { text: string; playing: boo
   const waiting = clip === "loading" && !gaveUp;
 
   useEffect(() => () => audio?.pause(), [audio]);
+  // The browser speeds the voice up without raising its pitch; word timings follow the media clock, so they stay in sync.
+  useEffect(() => {
+    if (audio) audio.playbackRate = rate;
+  }, [audio, rate]);
   // A clip that never arrives doesn't hold the episode hostage.
   useEffect(() => {
     if (!waiting || !playing) return;
@@ -149,21 +154,22 @@ function Narration({ text, playing, clip, onDone }: { text: string; playing: boo
       };
     }
     // No voice: an estimated speaking pace, counted from the clock so a throttled timer never slows it down.
-    const start = performance.now() - (shown / WORDS_PER_SECOND) * 1000;
-    const t = setInterval(() => setShown(Math.min(total, Math.floor(((performance.now() - start) / 1000) * WORDS_PER_SECOND))), 80);
+    const pace = WORDS_PER_SECOND * rate;
+    const start = performance.now() - (shown / pace) * 1000;
+    const t = setInterval(() => setShown(Math.min(total, Math.floor(((performance.now() - start) / 1000) * pace))), 80);
     return () => clearInterval(t);
     // `shown` is read once when playback (re)starts; it isn't a dependency.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [text, playing, total, voiced, waiting, audio, clip, ready]);
+  }, [text, playing, total, voiced, waiting, audio, clip, ready, rate]);
 
   // The step is over when the voice ends (or, silent, when the last word shows), after a short hold.
   const finished = voiced ? ended : !waiting && shown >= total;
   useEffect(() => {
     if (!playing || !finished) return;
     setShown(total);
-    const t = setTimeout(() => done.current(), HOLD_MS);
+    const t = setTimeout(() => done.current(), HOLD_MS / rate);
     return () => clearTimeout(t);
-  }, [playing, finished, total]);
+  }, [playing, finished, total, rate]);
 
   let n = 0;
   return (
@@ -177,13 +183,16 @@ function Narration({ text, playing, clip, onDone }: { text: string; playing: boo
 function PlayBar({ e, flat, featureId }: { e: Episode; flat: Flat[]; featureId: string }) {
   const s = useStore(playerStore);
   const voiceOn = useStore(voiceStore);
+  const rate = useStore(rateStore);
   const { data: status } = useQuery("voice-status", api.voice);
   const speak = voiceOn && !!status?.available;
   const cur = flat[s.at];
   const { data: clip, error: clipError } = useQuery(speak && cur ? `clip:${featureId}:${s.at}` : null, () => api.voiceClip(featureId, s.at));
-  // Fetch the next line while this one plays, so steps follow each other without a gap.
-  const nextAt = flat[s.at + 1] ? s.at + 1 : null;
-  useQuery(speak && nextAt !== null ? `clip:${featureId}:${nextAt}` : null, () => api.voiceClip(featureId, nextAt!));
+  // Fetch the next two lines while this one plays, so steps follow each other without a wait.
+  const next1 = flat[s.at + 1] ? s.at + 1 : null;
+  const next2 = flat[s.at + 2] ? s.at + 2 : null;
+  useQuery(speak && next1 !== null ? `clip:${featureId}:${next1}` : null, () => api.voiceClip(featureId, next1!));
+  useQuery(speak && next2 !== null ? `clip:${featureId}:${next2}` : null, () => api.voiceClip(featureId, next2!));
   if (!cur) return null;
   const scene = e.scenes[cur.scene]!;
   const p = cur.data.predict;
@@ -200,7 +209,7 @@ function PlayBar({ e, flat, featureId }: { e: Episode; flat: Flat[]; featureId: 
       {waiting ? (
         <div className="ep-predict">
           {/* The question is asked aloud too; it never moves on by itself. */}
-          <Narration key={`q${s.at}`} text={p.question} playing={s.playing && !s.focus} clip={!speak || clipError ? null : clip ?? "loading"} onDone={() => {}} />
+          <Narration key={`q${s.at}`} text={p.question} playing={s.playing && !s.focus} clip={!speak || clipError ? null : clip ?? "loading"} rate={rate} onDone={() => {}} />
           <div className="ep-options">
             {p.options.map((o, i) => <button key={i} className="ep-option" onClick={() => set({ picked: i, playing: false })}>{o.text}</button>)}
           </div>
@@ -214,7 +223,7 @@ function PlayBar({ e, flat, featureId }: { e: Episode; flat: Flat[]; featureId: 
         </div>
       ) : (
         <>
-          <Narration key={s.at} text={cur.data.say} playing={s.playing && !s.focus} clip={!speak || clipError ? null : clip ?? "loading"} onDone={() => go(s.at + 1, flat.length)} />
+          <Narration key={s.at} text={cur.data.say} playing={s.playing && !s.focus} clip={!speak || clipError ? null : clip ?? "loading"} rate={rate} onDone={() => go(s.at + 1, flat.length)} />
           <div className="ep-caption"><span>{cur.data.caption}</span><Evidence claim={cur.data.claim} /></div>
           <Taken claim={cur.data.claim} />
         </>
@@ -226,6 +235,7 @@ function PlayBar({ e, flat, featureId }: { e: Episode; flat: Flat[]; featureId: 
         </button>
         <button className="tbtn" onClick={() => go(s.at + 1, flat.length)} disabled={waiting} aria-label="Next step ( → )"><Icon name="chevron" size={15} /></button>
         <span className="ep-count">{s.at + 1} / {flat.length}</span>
+        <button className="tbtn ep-rate" onClick={() => rateStore.set(nextRate(rate))} title="Playback speed" aria-label={`Playback speed ${rate}×, change`}>{rate}×</button>
         <button
           className="tbtn ep-voice"
           aria-pressed={speak}
@@ -242,14 +252,22 @@ function PlayBar({ e, flat, featureId }: { e: Episode; flat: Flat[]; featureId: 
   );
 }
 
-function IntroCard({ e }: { e: Episode }) {
+function IntroCard({ e, featureId }: { e: Episode; featureId: string }) {
+  const rate = useStore(rateStore);
+  const voiceOn = useStore(voiceStore);
+  const { data: status } = useQuery("voice-status", api.voice);
+  const speak = voiceOn && !!status?.available;
+  // While the learner reads the intro, the first two lines get ready, so Start plays at once.
+  useQuery(speak ? `clip:${featureId}:0` : null, () => api.voiceClip(featureId, 0));
+  useQuery(speak ? `clip:${featureId}:1` : null, () => api.voiceClip(featureId, 1));
+  const minutes = Math.max(1, Math.round(e.scenes.flatMap((sc) => sc.steps).reduce((t, st) => t + duration(st.say, rate) + 800 / rate, 0) / 60000));
   return (
     <div className="float ep-card" role="dialog" aria-label={e.title}>
       <div className="ep-card-kicker">Episode</div>
       <h2>{e.title}</h2>
       <p>{e.intro}</p>
       <div className="analogy"><b>Think of it like this.</b> {e.analogy}</div>
-      <p className="ep-meta">{e.scenes.length} scenes · about {Math.round(e.scenes.flatMap((s) => s.steps).reduce((t, st) => t + duration(st.say), 0) / 60000)} minutes · pauses to ask what you think will happen</p>
+      <p className="ep-meta">{e.scenes.length} scenes · about {minutes} minute{minutes > 1 ? "s" : ""} at {rate}× · pauses to ask what you think will happen</p>
       <button className="ep-start" onClick={restart} autoFocus><Icon name="play" size={14} weight="bold" />Start</button>
     </div>
   );
@@ -282,25 +300,74 @@ function EndCard({ e }: { e: Episode }) {
   );
 }
 
-function Empty({ data }: { data: EpisodeState }) {
+/**
+ * No episode yet: get it made without asking. A checked feature starts writing at once; an unchecked one is
+ * checked first (or waits its turn if Docent is busy checking others). The wait shows what's already known
+ * about the feature, so it's time spent learning, not watching a spinner.
+ */
+function Preparing({ data }: { data: EpisodeState }) {
   const s = useFeatures();
-  const running = !!s?.job && !s.job.finishedAt;
-  const write = async () => {
-    await api.writeEpisode(data.feature.id);
-    await refreshFeatures();
-  };
+  const id = data.feature.id;
+  const main = s?.job && !s.job.finishedAt ? s.job : null;
+  const ep = s?.episodeJob?.featureId === id ? s.episodeJob : null;
+  const writing = !!ep && !ep.finishedAt;
+  const failed = ep?.error && ep.finishedAt ? ep.error : null;
+  const checking = !data.verified && !!main && (main.active ?? []).includes(data.feature.name);
+  const job = writing ? ep : checking || (!data.verified && main) ? main : null;
+  const now = useNow(!!job);
+  const progress = useProgress(job, now);
+  const { data: detail } = useQuery(`feature:${id}:${data.verified}`, () => api.feature(id));
+  const a = detail?.analysis;
+
+  // Nothing to show beside the wait, so the details panel folds away; playing the episode opens it again.
+  useEffect(() => inspectorStore.set((v) => ({ ...v, open: false })), []);
+
+  // Start whatever is needed, once per visit: write if checked, check first if nothing else is running.
+  const started = useRef<string | null>(null);
+  useEffect(() => {
+    if (!s || failed) return;
+    const want = data.verified ? "write" : main ? null : "check";
+    if (!want || started.current === `${want}:${id}` || writing) return;
+    started.current = `${want}:${id}`;
+    void (want === "write" ? startEpisode(id) : startVerify(id));
+  }, [s, data.verified, main, writing, failed, id]);
+
+  const what = writing
+    ? "Writing the episode from what was checked"
+    : checking || (!data.verified && main?.kind === "verify")
+      ? "Checking this feature against the code first"
+      : !data.verified && main
+        ? `Waiting for Docent to finish checking other features (${main.done.length} of ${main.total} ready)`
+        : failed
+          ? "Couldn't write the episode"
+          : "Getting the episode ready";
   return (
     <div className="center-msg">
-      <div className="feature-empty">
+      <div className="ep-wait float">
+        <div className="ep-card-kicker">Episode</div>
         <h2>{data.feature.name}</h2>
-        {data.verified ? (
-          <>
-            <p>No episode yet. Docent writes it from what verification established, checks every claim, then you can watch it.</p>
-            <button className="ep-start" disabled={running} onClick={() => void write()}>{running && s?.job?.kind === "episode" ? "Writing…" : "Write the episode"}</button>
-          </>
+        <div className="ep-wait-status" role="status" aria-live="polite">
+          {failed ? <span className="job-dot" /> : <span className="spinner" aria-hidden="true" />}
+          <span>{what}</span>
+          {job && <span className="ep-wait-left">{timeLeft(job, now)}</span>}
+        </div>
+        {failed ? (
+          <p className="set-error">{failed} <button className="link" onClick={() => void startEpisode(id)}>Try again</button></p>
         ) : (
-          <p>Verify this feature first: episodes are built only from checked claims.</p>
+          <div className="ep-wait-bar" aria-hidden="true"><i style={{ transform: `scaleX(${job ? progress : 0.04})` }} /></div>
         )}
+        <div className="ep-wait-meanwhile">
+          <div className="ep-card-kicker">While you wait</div>
+          <p><b>{a?.summary ?? data.feature.summary}</b></p>
+          {a?.analogy && <div className="analogy"><b>Think of it like this.</b> {a.analogy}</div>}
+          {a && a.flow.length > 0 && (
+            <>
+              <div className="ep-wait-label">How it flows</div>
+              <ol className="ep-wait-flow">{a.flow.slice(0, 8).map((f, i) => <li key={i}>{f.step}</li>)}</ol>
+            </>
+          )}
+          {!a && <p className="set-hint">The steps of this feature appear here as soon as it has been checked.</p>}
+        </div>
       </div>
     </div>
   );
@@ -335,7 +402,7 @@ export function EpisodeCanvas({ id }: { id: string }) {
   const cur = flat[s.at];
   useEffect(() => {
     if (!s.playing || s.phase !== "play" || !cur?.data.predict || s.picked === null || s.focus) return;
-    const t = setTimeout(() => go(s.at + 1, flat.length), duration(cur.data.predict ? cur.data.predict.reveal.text : cur.data.say));
+    const t = setTimeout(() => go(s.at + 1, flat.length), duration(cur.data.predict ? cur.data.predict.reveal.text : cur.data.say, rateStore.get()));
     return () => clearTimeout(t);
   }, [s.playing, s.phase, s.at, s.focus, s.picked, cur, flat.length]);
 
@@ -354,12 +421,12 @@ export function EpisodeCanvas({ id }: { id: string }) {
 
   if (error) return <div className="center-msg">Couldn’t load the episode: {error.message}</div>;
   if (!data) return null;
-  if (!e || !graph) return <Empty data={data} />;
+  if (!e || !graph) return <Preparing data={data} />;
   return (
     <>
       <Diagram nodes={graph.nodes} edges={graph.edges} edgeShape="curve" edgeLabels={s.phase !== "play"} noDive label={`${e.title}, the episode`} />
       {data.stale && <div className="float ep-stale">The code changed since this episode was written. <button className="link" onClick={() => void api.writeEpisode(id).then(refreshFeatures)}>Write it again</button></div>}
-      {s.phase === "intro" && <IntroCard e={e} />}
+      {s.phase === "intro" && <IntroCard e={e} featureId={id} />}
       {s.phase === "end" && <EndCard e={e} />}
       {s.phase === "play" && <PlayBar e={e} flat={flat} featureId={id} />}
     </>

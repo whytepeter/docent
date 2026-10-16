@@ -1,26 +1,52 @@
-.open-repo { position: fixed; inset: 0; display: grid; place-items: center; padding: 16px; background: var(--paper); z-index: 50; }
-.open-repo.over { background: color-mix(in srgb, var(--paper) 55%, transparent); backdrop-filter: blur(6px); animation: open-fade .2s var(--ease-out); }
-.open-card { position: relative; width: min(440px, 100%); padding: 22px; border-radius: var(--r-lg); background: var(--card); box-shadow: var(--shadow-float); animation: open-rise .28s var(--ease-out); }
-.open-head { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 18px; }
+/* On its own it sits on the same dotted canvas as the home; over the canvas it's a light dim, not a heavy blur. */
+.open-repo {
+  position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 16px; overflow-y: auto;
+  background-color: var(--canvas, #F5F5F5); background-image: radial-gradient(circle at center, var(--dot, #C6C6C6) 0.9px, transparent 1.35px); background-size: 16px 16px;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .open-repo { --canvas: #1E1E1E; --dot: #474747; } }
+:root[data-theme="dark"] .open-repo { --canvas: #1E1E1E; --dot: #474747; }
+.open-repo.over { background: rgba(12, 14, 20, .28); backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px); animation: open-fade .18s var(--ease-out); }
+
+.open-card { position: relative; width: min(480px, 100%); padding: 24px; border-radius: 20px; border: 1px solid var(--line-2); background: var(--card); box-shadow: var(--shadow-float); animation: open-rise .26s var(--ease-out); }
+.open-head { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; }
 .open-head > div { flex: 1; min-width: 0; }
-.open-head h1 { margin: 0; font: 650 18px var(--display); letter-spacing: -.02em; color: var(--ink); }
-.open-head p { margin: 2px 0 0; font-size: 12.5px; color: var(--ink-2); }
-.open-head .brand-mark { margin-top: 2px; }
-.open-choose { width: 100%; height: 42px; border: 0; border-radius: var(--r); background: var(--accent); color: var(--on-accent); font: 600 13.5px var(--sans); display: flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer; transition: background-color .15s ease, transform .12s var(--ease-out); }
+.open-mark { flex: none; width: 42px; height: 42px; }
+.open-mark .logo { display: block; }
+.open-head h1 { margin: 0; font: 700 19px/1.2 var(--display); letter-spacing: -.02em; color: var(--ink); }
+.open-head p { margin: 3px 0 0; font-size: 13px; color: var(--ink-2); }
+.open-x { align-self: flex-start; flex: none; width: 32px; height: 32px; margin: -6px -6px 0 0; border: 0; border-radius: 10px; background: none; color: var(--ink-3); display: grid; place-items: center; cursor: pointer; transition: background-color .15s, color .15s; }
+.open-x:hover { background: var(--fill); color: var(--ink); }
+
+.open-choose { width: 100%; height: 46px; border: 0; border-radius: 12px; background: var(--accent); color: var(--on-accent); font: 600 14px var(--sans); display: flex; align-items: center; justify-content: center; gap: 9px; cursor: pointer; transition: background-color .15s ease, transform .12s var(--ease-out); }
 .open-choose:hover { background: var(--accent-ink); }
 .open-choose:active { transform: scale(.98); }
-.open-path { display: flex; gap: 6px; margin-top: 10px; }
-.open-path input { flex: 1; min-width: 0; height: 34px; padding: 0 11px; border-radius: 9px; border: 1px solid var(--line-2); background: var(--paper); color: var(--ink); font: 12.5px var(--mono); outline: none; }
+.open-choose:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+/* One field with its own submit, so "Open" never floats beside it looking disabled. */
+.open-path { position: relative; margin-top: 10px; }
+.open-path input { width: 100%; height: 42px; padding: 0 46px 0 14px; border-radius: 12px; border: 1px solid var(--line-2); background: var(--paper); color: var(--ink); font: 13px var(--mono); outline: none; transition: border-color .15s, box-shadow .15s; }
+.open-path input::placeholder { font-family: var(--sans); font-size: 13.5px; color: var(--ink-3); }
 .open-path input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-.open-path .tbtn { height: 34px; }
-.open-path .tbtn:disabled { opacity: .45; cursor: default; }
-.open-error { margin: 10px 0 0; padding: 8px 10px; border-radius: 9px; background: var(--brick-soft); color: var(--brick); font-size: 12.5px; }
-.open-recent { margin-top: 18px; }
-.open-label { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 4px 2px; }
-.open-item { width: 100%; border: 0; background: none; text-align: left; padding: 8px 10px; border-radius: 9px; cursor: pointer; display: flex; flex-direction: column; gap: 1px; transition: background-color .15s ease; }
-.open-item:hover { background: var(--fill); }
-.open-item b { font-size: 13px; font-weight: 600; color: var(--ink); }
-.open-item span { font: 11px var(--mono); color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.open-path button { position: absolute; right: 6px; top: 6px; width: 30px; height: 30px; border: 0; border-radius: 9px; display: grid; place-items: center; background: var(--accent); color: var(--on-accent); cursor: pointer; transition: opacity .15s, transform .12s var(--ease-out); }
+.open-path button svg { transform: rotate(90deg); }
+.open-path button:disabled { opacity: 0; pointer-events: none; transform: scale(.8); }
+.open-path button:active { transform: scale(.92); }
+
+.open-error { margin: 10px 0 0; padding: 8px 10px; border-radius: 10px; background: var(--brick-soft); color: var(--brick); font-size: 12.5px; }
+
+.open-recent { margin-top: 20px; }
+.open-label { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 6px 2px; }
+.open-item { width: 100%; border: 0; background: none; text-align: left; padding: 8px 10px 8px 8px; border-radius: 12px; cursor: pointer; display: flex; align-items: center; gap: 12px; color: var(--ink-3); transition: background-color .15s ease; }
+.open-item:hover, .open-item:focus-visible { background: var(--fill); outline: none; }
+.open-item > svg { flex: none; opacity: 0; transition: opacity .15s, transform .15s var(--ease-out); }
+.open-item:hover > svg, .open-item:focus-visible > svg { opacity: 1; transform: translateX(2px); }
+.open-ava { flex: none; width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: var(--fill); border: 1px solid var(--line-2); color: var(--ink-2); font: 700 14px var(--display); }
+.open-item-t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.open-item-t b { font-size: 14px; font-weight: 600; color: var(--ink); }
+.open-item-t span { font: 11.5px var(--mono); color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.open-item em { flex: none; font-style: normal; font-size: 11.5px; font-weight: 600; padding: 2px 8px; border-radius: 99px; background: var(--accent-soft); color: var(--accent); }
+.open-item.here .open-ava { background: var(--accent-soft); border-color: transparent; color: var(--accent); }
+
 .open-busy { display: flex; align-items: center; gap: 12px; padding: 14px 4px 6px; }
 .open-busy div { display: flex; flex-direction: column; gap: 2px; }
 .open-busy b { font-size: 13.5px; color: var(--ink); }
