@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { CloneJob, Workspace } from "@docent/contracts";
 import { api } from "../../shared/api/client.ts";
-import { Icon, Logo, ThemeButton, type IconName } from "../../shared/ui/index.ts";
+import { Icon, Logo, ThemeButton } from "../../shared/ui/index.ts";
 import { home, where } from "./where.ts";
 import "./workspace.css";
 
@@ -86,60 +86,25 @@ function useDragging(): boolean {
 }
 
 const isZip = (f: File) => /\.zip$/i.test(f.name) || f.type === "application/zip" || f.type === "application/x-zip-compressed";
-const looksGithub = (s: string) => /^(https?:\/\/)?(www\.)?github\.com\/|^git@github\.com:/i.test(s.trim());
+const looksGithub = (s: string) => /^(https?:\/\/)?(www\.)?github\.com\/|^(git@|ssh:\/\/git@)github\.com[:/]/i.test(s.trim());
 const sleep = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
 
-type Tab = "folder" | "github" | "zip";
-const TABS: { id: Tab; icon: IconName; label: string }[] = [
-  { id: "folder", icon: "project", label: "Folder" },
-  { id: "github", icon: "git", label: "GitHub" },
-  { id: "zip", icon: "zip", label: "Zip" },
-];
-const TAB_KEY = "docent.openTab";
-
-/** Asks the welcome page to open on one tab next time (the project menu's "From GitHub or a zip…"). */
-export function tabHint(tab: Tab): void {
-  try {
-    sessionStorage.setItem(TAB_KEY, tab);
-  } catch {
-    /* storage blocked: the page opens on Folder */
-  }
-}
-function readTab(): Tab {
-  try {
-    const t = sessionStorage.getItem(TAB_KEY);
-    return t === "github" || t === "zip" ? t : "folder";
-  } catch {
-    return "folder";
-  }
-}
-
-const SAFE: Record<Tab, string> = {
-  folder: "Read-only. Docent never writes to your folder.",
-  github: "Read-only. Docent never runs the repo’s code or installs its packages.",
-  zip: "Unpacked into ~/.docent/imports. Nothing in it is run.",
-};
-
 /**
- * The welcome page at #/: open a codebase from a folder on this Mac (drop it, the folder dialog or a pasted path),
- * a GitHub URL (cloned into ~/.docent/checkouts) or a zip (unpacked into ~/.docent/imports), or pick one opened before.
+ * The welcome page at #/: open a codebase from a folder or a zip (drop either, or pick one), a pasted path or
+ * GitHub URL (cloned into ~/.docent/checkouts; zips unpack into ~/.docent/imports), or one opened before.
  * Every view caches data for the open repo, so opening one is a fresh page load.
  */
 export function OpenRepo({ workspace, onSettings }: { workspace: Workspace; onSettings: () => void }) {
-  const [tab, setTab] = useState<Tab>(readTab);
   const [path, setPath] = useState("");
-  const [url, setUrl] = useState("");
   const [busy, setBusy] = useState<{ title: string; note: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [choices, setChoices] = useState<{ name: string; paths: string[] } | null>(null);
   const [clone, setClone] = useState<CloneJob | null>(null);
   const [have, setHave] = useState<{ repo: string; path: string; url: string } | null>(null);
-  const zipInput = useRef<HTMLInputElement>(null);
   const dragging = useDragging();
 
   useEffect(() => {
     document.title = "Docent";
-    tabHint("folder");
   }, []);
 
   const reset = () => {
@@ -183,7 +148,6 @@ export function OpenRepo({ workspace, onSettings }: { workspace: Workspace; onSe
 
   const github = async (input: string, pull = false) => {
     reset();
-    setTab("github");
     setBusy({ title: `Finding ${input.trim()}`, note: "Asking GitHub." });
     try {
       if (pull) return void (await follow(await api.pullGithub(input)));
@@ -198,7 +162,6 @@ export function OpenRepo({ workspace, onSettings }: { workspace: Workspace; onSe
 
   const unzip = async (file: File) => {
     reset();
-    setTab("zip");
     setBusy({ title: `Unpacking ${file.name}`, note: "Then Docent reads it. The first time takes a few seconds." });
     try {
       go(await api.importZip(file));
@@ -225,7 +188,6 @@ export function OpenRepo({ workspace, onSettings }: { workspace: Workspace; onSe
     if (!dropped) return;
     if (dropped === "file") return setError("That’s a file. Drop the project’s folder, or a .zip of it.");
     if ("zip" in dropped) return void (await unzip(dropped.zip));
-    setTab("folder");
     setBusy({ title: `Finding ${dropped.name}`, note: "Looking for it on this Mac." });
     try {
       const { paths } = await api.findDropped(dropped.name, dropped.children);
@@ -241,6 +203,8 @@ export function OpenRepo({ workspace, onSettings }: { workspace: Workspace; onSe
   const current = workspace.current;
   const projects = [...(current ? [{ ...current, openedAt: "" }] : []), ...workspace.recent];
   const working = !!busy || !!clone;
+  /** What the pasted text is, shown as the field's icon: a GitHub repo, a zip, or a folder. */
+  const kind = looksGithub(path) ? "github" : /\.zip$/i.test(path.trim()) ? "zip" : "folder";
   return (
     <main className={`bd-home welcome${dragging ? " dragging" : ""}`} onDrop={(e) => void drop(e)} onDragOver={(e) => e.preventDefault()}>
       <header className="bd-home-bar">
@@ -274,70 +238,33 @@ export function OpenRepo({ workspace, onSettings }: { workspace: Workspace; onSe
             </div>
           ) : (
             <>
-              <div className="wel-tabs" role="tablist" aria-label="Open from">
-                {TABS.map((t) => (
-                  <button key={t.id} role="tab" aria-selected={tab === t.id} className={`wel-tab${tab === t.id ? " on" : ""}`} onClick={() => { reset(); setTab(t.id); }}>
-                    <Icon name={t.icon} size={15} />{t.label}
-                  </button>
-                ))}
-              </div>
-
-              {tab === "folder" && (
-                <div role="tabpanel" aria-label="Folder">
+              {have ? (
+                <div className="wel-have">
+                  <p><b>Docent already has a copy of {have.repo}.</b> Pull the latest commits first, or open the copy as it is.</p>
+                  <div className="wel-have-acts">
+                    <button className="open-choose" onClick={() => void github(have.url, true)} autoFocus><Icon name="refresh" size={15} />Pull latest and open</button>
+                    <button className="wel-btn" onClick={() => void open(have.path)}>Open as it is</button>
+                    <button className="wel-btn wel-btn-quiet" onClick={reset}>Cancel</button>
+                  </div>
+                </div>
+              ) : (
+                <>
                   <div className="wel-drop">
                     <span className="wel-drop-i" aria-hidden="true"><Icon name={dragging ? "drop" : "project"} size={22} /></span>
                     <div className="wel-drop-t">
-                      <b>{dragging ? "Drop to open it" : "Drop a project folder"}</b>
-                      <span>{dragging ? "Docent finds it on this Mac and reads it." : "Anywhere on this page, or pick one from your Mac."}</span>
+                      <b>{dragging ? "Drop to open it" : "Drop a project folder or a .zip"}</b>
+                      <span>{dragging ? "Docent finds it and reads it." : "Anywhere on this page, or pick either from your Mac."}</span>
                     </div>
                     <button className="open-choose" onClick={() => void choose()} autoFocus>
                       <Icon name="folder" size={16} />Choose…
                     </button>
                   </div>
                   <form className="open-path" onSubmit={(e) => { e.preventDefault(); const p = path.trim(); if (p) void (looksGithub(p) ? github(p) : open(p)); }}>
-                    <input value={path} onChange={(e) => setPath(e.target.value)} placeholder="or paste a path, like ~/code/my-app" spellCheck={false} autoCapitalize="off" autoCorrect="off" aria-label="Folder path" />
-                    <button type="submit" disabled={!path.trim()} aria-label="Open this path" title="Open this path"><Icon name="send" size={15} weight="bold" /></button>
+                    <span className={`open-path-i${kind === "folder" ? "" : " on"}`} aria-hidden="true"><Icon name={kind === "github" ? "git" : kind === "zip" ? "zip" : "folder"} size={15} /></span>
+                    <input value={path} onChange={(e) => setPath(e.target.value)} placeholder="or paste a path, a .zip’s path or a GitHub URL" spellCheck={false} autoCapitalize="off" autoCorrect="off" aria-label="Folder path or GitHub URL" />
+                    <button type="submit" disabled={!path.trim()} aria-label="Open" title={kind === "github" ? "Clone and open" : "Open this path"}><Icon name="send" size={15} weight="bold" /></button>
                   </form>
-                </div>
-              )}
-
-              {tab === "github" && (
-                <div role="tabpanel" aria-label="GitHub">
-                  {have ? (
-                    <div className="wel-have">
-                      <p><b>Docent already has a copy of {have.repo}.</b> Pull the latest commits first, or open the copy as it is.</p>
-                      <div className="wel-have-acts">
-                        <button className="open-choose" onClick={() => void github(have.url, true)} autoFocus><Icon name="refresh" size={15} />Pull latest and open</button>
-                        <button className="wel-btn" onClick={() => void open(have.path)}>Open as it is</button>
-                      </div>
-                    </div>
-                  ) : (
-                    <>
-                      <form className="open-path wel-url" onSubmit={(e) => { e.preventDefault(); if (url.trim()) void github(url); }}>
-                        <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://github.com/owner/repo" spellCheck={false} autoCapitalize="off" autoCorrect="off" aria-label="GitHub repo URL" autoFocus />
-                        <button type="submit" disabled={!url.trim()} aria-label="Clone and open" title="Clone and open"><Icon name="send" size={15} weight="bold" /></button>
-                      </form>
-                      <p className="wel-note">Also owner/repo, an SSH address or a branch URL (…/tree/branch). Docent keeps a full clone in ~/.docent/checkouts. Private repos use your own git sign-in: a credential helper, SSH keys or gh. Docent never asks for a token.</p>
-                    </>
-                  )}
-                </div>
-              )}
-
-              {tab === "zip" && (
-                <div role="tabpanel" aria-label="Zip">
-                  <div className="wel-drop">
-                    <span className="wel-drop-i" aria-hidden="true"><Icon name="zip" size={22} /></span>
-                    <div className="wel-drop-t">
-                      <b>{dragging ? "Drop to open it" : "Drop a .zip of a project"}</b>
-                      <span>Anywhere on this page, or pick one from your Mac.</span>
-                    </div>
-                    <button className="open-choose" onClick={() => zipInput.current?.click()} autoFocus>
-                      <Icon name="zip" size={16} />Choose…
-                    </button>
-                    <input ref={zipInput} type="file" accept=".zip,application/zip" hidden onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) void unzip(f); }} />
-                  </div>
-                  <p className="wel-note"><b>A zip has no git history.</b> Docent can’t say why code changed (that comes from commit messages) or which files usually change together. Flows, boards and Ask Docent work the same. If the project is on GitHub, open it from there instead.</p>
-                </div>
+                </>
               )}
 
               {choices && (
@@ -351,7 +278,8 @@ export function OpenRepo({ workspace, onSettings }: { workspace: Workspace; onSe
                 </div>
               )}
               {error && <p className="open-error" role="alert">{error}</p>}
-              <p className="wel-safe"><Icon name="lock" size={13} />{SAFE[tab]}</p>
+              <p className="wel-note">GitHub repos are cloned with their history; private ones use your own git sign-in, never a token. A zip has no history, so there’s no “why” from commits.</p>
+              <p className="wel-safe"><Icon name="lock" size={13} />Read-only. Docent never writes to your folder or runs its code.</p>
             </>
           )}
         </section>

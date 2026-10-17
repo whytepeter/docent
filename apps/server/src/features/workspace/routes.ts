@@ -1,10 +1,8 @@
 import { Hono } from "hono";
 import type { CloneJob, GithubStart, Workspace as WorkspaceState } from "@docent/contracts";
 import { cloneJob, parseGithub, pullGithub, startGithub } from "./github.ts";
-import { findDropped, pickFolder, type Workspace } from "./service.ts";
+import { findDropped, MAX_ZIP_BYTES, pickFolder, type Workspace } from "./service.ts";
 
-/** The most a zip upload may weigh before it's unpacked. */
-const MAX_ZIP_UPLOAD = 300 * 1024 * 1024;
 const NOT_GITHUB = "That doesn’t look like a GitHub repo. Paste a URL like https://github.com/owner/repo, or just owner/repo.";
 
 export function workspaceRoutes(ws: Workspace): Hono {
@@ -42,9 +40,9 @@ export function workspaceRoutes(ws: Workspace): Hono {
     // The zip's bytes as the body, its file name in ?name=.
     .post("/workspace/zip", async (c) => {
       const name = c.req.query("name") ?? "project.zip";
-      if (Number(c.req.header("content-length") ?? 0) > MAX_ZIP_UPLOAD) return c.json({ error: `That zip is over ${MAX_ZIP_UPLOAD / 1024 / 1024} MB, the most Docent opens.` }, 413);
+      if (Number(c.req.header("content-length") ?? 0) > MAX_ZIP_BYTES) return c.json({ error: `That zip is over ${MAX_ZIP_BYTES / 1024 / 1024} MB, the most Docent opens.` }, 413);
       const buf = Buffer.from(await c.req.arrayBuffer());
-      if (buf.length > MAX_ZIP_UPLOAD) return c.json({ error: `That zip is over ${MAX_ZIP_UPLOAD / 1024 / 1024} MB, the most Docent opens.` }, 413);
+      if (buf.length > MAX_ZIP_BYTES) return c.json({ error: `That zip is over ${MAX_ZIP_BYTES / 1024 / 1024} MB, the most Docent opens.` }, 413);
       return c.json<WorkspaceState>(ws.importZip(buf, name));
     });
 }

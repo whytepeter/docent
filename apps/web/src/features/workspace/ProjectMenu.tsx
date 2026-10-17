@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../../shared/api/client.ts";
 import { useQuery } from "../../shared/api/useQuery.ts";
 import { Icon } from "../../shared/ui/index.ts";
-import { repoHash, tabHint } from "./OpenRepo.tsx";
+import { repoHash } from "./OpenRepo.tsx";
 import { where } from "./where.ts";
 import "./workspace.css";
 
@@ -94,11 +94,8 @@ export function ProjectMenu({ name }: { name: string }) {
           <button className="pm-item pm-action" role="menuitem" disabled={!!busy} onClick={() => void choose()}>
             {busy === "folder" ? <span className="spinner pm-spin" aria-hidden="true" /> : <Icon name="plus" size={16} />}Open another folder…
           </button>
-          <button className="pm-item pm-action" role="menuitem" disabled={!!busy} onClick={() => { tabHint("github"); window.location.hash = "#/"; }}>
-            <Icon name="git" size={16} />From GitHub or a zip…
-          </button>
           <button className="pm-item pm-action" role="menuitem" disabled={!!busy} onClick={() => (window.location.hash = "#/")}>
-            <Icon name="area" size={16} />All projects
+            <Icon name="area" size={16} />All projects, GitHub or zip…
           </button>
           {error && <p className="open-error pm-err" role="alert">{error}</p>}
         </div>

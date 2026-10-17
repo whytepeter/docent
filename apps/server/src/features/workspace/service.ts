@@ -13,6 +13,8 @@ const RECENT_FILE = join(homedir(), ".docent", "recent.json");
 const MAX_RECENT = 8;
 /** Zips Docent unpacked, one folder each, named after the zip. */
 export const IMPORTS = join(homedir(), ".docent", "imports");
+/** The most a zip may weigh before it's unpacked. */
+export const MAX_ZIP_BYTES = 300 * 1024 * 1024;
 
 /**
  * Which codebase the app is showing. The user can open another folder at any time;
@@ -38,6 +40,11 @@ export class Workspace {
    */
   open(path: string, source?: RepoSource): WorkspaceState {
     const root = resolve(path.trim().replace(/^~(?=$|\/)/, homedir()));
+    // A .zip on disk (picked in the dialog or pasted) opens the way a dropped one does.
+    if (/\.zip$/i.test(root) && isFile(root)) {
+      if (statSync(root).size > MAX_ZIP_BYTES) throw new Error(`That zip is over ${MAX_ZIP_BYTES / 1024 / 1024} MB, the most Docent opens.`);
+      return this.importZip(readFileSync(root), basename(root));
+    }
     if (!isDir(root)) throw new Error(`Not a folder: ${root}`);
     const repo = RepoService.open(root, this.log);
     this.repo = repo;
@@ -114,17 +121,41 @@ function walkHome(name: string, maxDepth = 4, maxDirs = 15000): string[] {
   return hits;
 }
 
-/** The native macOS folder dialog, shown over the browser. Resolves null when the user cancels. */
+/**
+ * The native macOS open dialog, shown over the browser: a project folder or a .zip, in one dialog.
+ * AppleScript's dialogs pick a folder or a file, never either, so this drives NSOpenPanel through JXA.
+ * Resolves null when the user cancels.
+ */
+const PICK_SCRIPT = `
+ObjC.import("AppKit");
+const panel = $.NSOpenPanel.openPanel;
+panel.canChooseDirectories = true;
+panel.canChooseFiles = true;
+panel.allowsMultipleSelection = false;
+panel.allowedFileTypes = $(["zip"]);
+panel.message = $("Choose a codebase: a project folder or a .zip");
+panel.prompt = $("Open");
+$.NSApplication.sharedApplication.activateIgnoringOtherApps(true);
+panel.runModal == $.NSModalResponseOK ? panel.URLs.objectAtIndex(0).path.js : "";
+`;
+
 export function pickFolder(): Promise<string | null> {
-  if (process.platform !== "darwin") return Promise.reject(new Error("The folder dialog is macOS only. Paste the folder's path instead."));
-  const script = `tell application (path to frontmost application as text) to POSIX path of (choose folder with prompt "Choose a codebase for Docent")`;
+  if (process.platform !== "darwin") return Promise.reject(new Error("The open dialog is macOS only. Paste the folder’s path instead."));
   return new Promise((ok, fail) => {
-    execFile("osascript", ["-e", script], (error, stdout, stderr) => {
+    execFile("osascript", ["-l", "JavaScript", "-e", PICK_SCRIPT], (error, stdout, stderr) => {
       if (!error) return ok(stdout.trim().replace(/\/$/, "") || null);
       if (/-128|cancel/i.test(stderr)) return ok(null);
       fail(new Error(stderr.trim() || error.message));
     });
   });
+}
+
+function isFile(path: string): boolean {
+  try {
+    return statSync(path).isFile();
+  } catch {
+    return false;
+  }
 }
 
 function isDir(path: string): boolean {
