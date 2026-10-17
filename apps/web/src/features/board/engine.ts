@@ -48,6 +48,12 @@ const LINE = 24;
 /** Dot grid spacing in board units, and the closest dots may get on screen (px) before the grid thins. */
 const GRID = 16;
 const GRID_MIN = 10;
+/**
+ * Below this zoom a card's code and notes would be too small to read, so each card shows only its number and
+ * title, drawn at a fixed size on screen (see .bd-stage.far in board.css); the rest comes back as you zoom in.
+ */
+const FAR = 0.5;
+const FAR_MIN = 0.14;
 export const LABEL: Record<string, string> = {
   confirmed: "Confirmed · read in the code, citation checked, and a second reader couldn't refute it",
   inferred: "Inferred · a reasoned guess",
@@ -114,6 +120,8 @@ export class BoardEngine {
   private drawn = new Set<string>();
   private drawnStep = -1;
   private frame1 = { x: 0, y: 0, w: 0, h: 0 };
+  /** Settles once every card's code is highlighted, the heavy work just after the board opens. */
+  private highlighted: Promise<unknown> = Promise.resolve();
 
   private cleanup: (() => void)[] = [];
 
@@ -163,6 +171,11 @@ export class BoardEngine {
     }
   }
 
+  /** A new narrator voice: lines fetched in the old one are dropped, so the next one is spoken in the new voice. */
+  voiceChanged() {
+    this.clips.clear();
+  }
+
   destroy() {
     this.tok++;
     this.flyId++;
@@ -203,6 +216,10 @@ export class BoardEngine {
   private apply() {
     const { x, y, k } = this.cam;
     this.world.style.transform = `translate(${x}px, ${y}px) scale(${k})`;
+    const far = k < FAR;
+    this.stage.classList.toggle("far", far);
+    // Text keeps its size on screen down to FAR_MIN; past that it shrinks too, or titles would outgrow their cards.
+    if (far) this.world.style.setProperty("--inv", (1 / Math.max(k, FAR_MIN)).toFixed(4));
     this.grid(x, y, k);
     this.emit();
   }
@@ -235,6 +252,16 @@ export class BoardEngine {
     const k = Math.min(aw / R.w, ah / R.h, 1.15);
     return { k, x: i.l + aw / 2 - (R.x + R.w / 2) * k, y: i.t + ah / 2 - (R.y + R.h / 2) * k };
   }
+  /** Time into a camera move, by frames: a frame that comes late (the page was busy) moves on at most 50ms, so a stall pauses the move instead of jumping it. */
+  private clock() {
+    let last = performance.now();
+    let t = 0;
+    return (n: number) => {
+      t += clamp(n - last, 0, 50);
+      last = n;
+      return t;
+    };
+  }
   /** Glides the camera, zooming in log space and moving the world centre, so it feels like one camera. */
   private flyTo(T: { x: number; y: number; k: number }, ms: number): Promise<void> {
     const id = ++this.flyId;
@@ -247,10 +274,10 @@ export class BoardEngine {
     const vw = this.stage.clientWidth / 2;
     const vh = this.stage.clientHeight / 2;
     return new Promise((res) => {
-      const t0 = performance.now();
+      const clock = this.clock();
       const f = (n: number) => {
         if (id !== this.flyId) return res();
-        const p = ease(Math.min(1, (n - t0) / ms));
+        const p = ease(Math.min(1, clock(n) / ms));
         const k = Math.exp(Math.log(a.k) + (Math.log(T.k) - Math.log(a.k)) * p);
         const cx0 = (vw - a.x) / a.k, cy0 = (vh - a.y) / a.k, cx1 = (vw - T.x) / T.k, cy1 = (vh - T.y) / T.k;
         this.cam.k = k;
@@ -276,12 +303,29 @@ export class BoardEngine {
   }
   fit(ms = 900) {
     const R = this.frame1;
-    // The title note sits above the frame's top edge; keep it in view.
-    return this.flyTo(this.fitRect({ x: R.x + 40, y: R.y - 60, w: R.w - 80, h: R.h + 20 }), ms);
+    // The title note sits above the frame's top edge (and grows when zoomed out); keep it in view.
+    return this.flyTo(this.fitRect({ x: R.x + 40, y: R.y - 110, w: R.w - 80, h: R.h + 70 }), ms);
   }
-  private cardRect(c: CardEl) {
-    const h = 116 + c.cur.length * LINE + 24 + 190;
-    return { x: c.x - 180, y: c.y - 50, w: W + 360, h: h + 100 };
+  private area() {
+    const i = this.o.insets();
+    return { i, aw: Math.max(200, this.stage.clientWidth - i.l - i.r), ah: Math.max(200, this.stage.clientHeight - i.t - i.b) };
+  }
+  /** A card's height once it's open with its notes. */
+  private openHeight(c: CardEl) {
+    return 116 + c.cur.length * LINE + 24 + 190;
+  }
+  /**
+   * The camera for reading one card: as wide as the space allows (never past 1:1), so its code is readable.
+   * A card too tall for the space shows from its top, or, for its notes, from its bottom.
+   */
+  private cardView(c: CardEl, at: "top" | "end" = "top") {
+    const { i, aw, ah } = this.area();
+    const pad = aw < 500 ? 12 : 40;
+    const k = Math.min(aw / (W + pad * 2), 1);
+    const h = this.openHeight(c);
+    const x = i.l + aw / 2 - (c.x + W / 2) * k;
+    const y = h * k + 2 * pad <= ah ? i.t + ah / 2 - (c.y + h / 2) * k : at === "top" ? i.t + pad - c.y * k : i.t + ah - pad - (c.y + h) * k;
+    return { k, x, y };
   }
 
   // ---------------------------------------------------------------- building
@@ -388,10 +432,11 @@ export class BoardEngine {
       why, say, x, y, cur: c.lines.slice(), html: null, typed: false,
     };
     this.cards.set(c.id, el);
-    void this.o.highlight(c.lines, c.file, c.start).then((h) => {
+    const lit = this.o.highlight(c.lines, c.file, c.start).then((h) => {
       el.html = h;
       if (el.typed) this.renderCode(el, this.hotFor(el));
-    });
+    }, () => undefined);
+    this.highlighted = Promise.all([this.highlighted, lit]);
   }
 
   private hotFor(c: CardEl) {
@@ -826,13 +871,13 @@ export class BoardEngine {
     const points = st.beats.some((b) => b.lines.length);
     let opened: Promise<boolean> = Promise.resolve(true);
     if (!card) {
-      void this.fit();
+      void (st.part === "intro" ? this.glide(tok) : this.fit());
       await this.drawUpTo(i, tok);
       if (st.part === "close") for (const e of this.edges.values()) e.path.classList.add("on");
     } else {
       // Go to where the card is (or will be), then draw what the tour reaches here, then send the request in.
       // A failure is told on the whole path it takes; anything else on its card.
-      await this.flyTo(this.fitRect(st.hops.length ? this.pathRect(st.hops) : this.cardRect(card)), 1000);
+      await this.flyTo(st.hops.length ? this.fitRect(this.pathRect(st.hops)) : this.cardView(card), 1000);
       if (tok !== this.tok) return;
       await this.drawUpTo(i, tok);
       if (tok !== this.tok) return;
@@ -861,7 +906,7 @@ export class BoardEngine {
         await this.playHops(st.hops, tok);
         if (tok !== this.tok) return;
         if (card) {
-          void this.flyTo(this.fitRect(this.cardRect(card)), 800);
+          void this.flyTo(this.cardView(card), 800);
           opened = this.openCard(card.data.id, tok, [], false);
         }
       }
@@ -886,7 +931,7 @@ export class BoardEngine {
       if (tok !== this.tok) return;
       if (points || st.hops.length) {
         this.settleMarks(card);
-        void this.flyTo(this.fitRect(this.cardRect(card)), 700);
+        void this.flyTo(this.cardView(card, "end"), 700);
         card.root.classList.remove("hold-notes");
         await this.typeNotes(card, tok);
       }
@@ -899,6 +944,56 @@ export class BoardEngine {
       if (i < this.board.steps.length - 1) void this.runStep(i + 1, true);
       else this.set({ playing: false });
     }
+  }
+
+  /**
+   * The big picture, as a quick look along the route the request will take: in close enough to read each card,
+   * from the first to the last, then back out to the whole board. It runs alongside the words, never holding
+   * them up, and stops the moment you move the board yourself.
+   */
+  private async glide(tok: number) {
+    const ids = [...new Set(this.board.steps.filter((s) => s.part === "flow").map((s) => s.card).filter(Boolean))];
+    const cs = ids.map((id) => this.cards.get(id)).filter((c): c is CardEl => !!c);
+    if (rm() || cs.length < 2) return this.fit();
+    // Highlighting the code stalls the page for a moment after it opens; start once it's done, so the glide is smooth.
+    const id0 = this.flyId;
+    await Promise.race([this.highlighted, new Promise((r) => setTimeout(r, 1500))]);
+    if (id0 !== this.flyId || tok !== this.tok) return;
+    const { i, aw, ah } = this.area();
+    const k = Math.min(aw / (W + 160), ah / 360, 0.85);
+    const views = cs.map((c) => ({ k, x: i.l + aw / 2 - (c.x + W / 2) * k, y: i.t + ah / 2 - (c.y + 80) * k }));
+    const still = async (p: Promise<void>) => {
+      const id = this.flyId;
+      await p;
+      return id === this.flyId && tok === this.tok;
+    };
+    if (!(await still(this.flyTo(views[0]!, 900)))) return;
+    if (!(await still(this.panThrough(views, 650 * (views.length - 1))))) return;
+    await this.fit(1000);
+  }
+  /** Pans at one zoom through a list of camera positions in one smooth movement, easing only at its ends. */
+  private panThrough(views: { x: number; y: number; k: number }[], ms: number): Promise<void> {
+    const id = ++this.flyId;
+    const at = [0];
+    for (let j = 1; j < views.length; j++) at.push(at[j - 1]! + Math.hypot(views[j]!.x - views[j - 1]!.x, views[j]!.y - views[j - 1]!.y));
+    const total = at[at.length - 1] || 1;
+    return new Promise((res) => {
+      const clock = this.clock();
+      const f = (n: number) => {
+        if (id !== this.flyId) return res();
+        const p = ease2(Math.min(1, clock(n) / ms));
+        const d = p * total;
+        let j = 1;
+        while (j < views.length - 1 && at[j]! < d) j++;
+        const a = views[j - 1]!, b = views[j]!;
+        const q = (d - at[j - 1]!) / Math.max(1, at[j]! - at[j - 1]!);
+        Object.assign(this.cam, { k: b.k, x: a.x + (b.x - a.x) * q, y: a.y + (b.y - a.y) * q });
+        this.apply();
+        if (p < 1) requestAnimationFrame(f);
+        else res();
+      };
+      requestAnimationFrame(f);
+    });
   }
 
   /** What the caption calls a step: where it sits in the tour, and its card. */
@@ -969,7 +1064,10 @@ export class BoardEngine {
     const top = c.y + (Math.min(...rows.map((r) => r.getBoundingClientRect().top)) - top0) / k;
     const bottom = c.y + (Math.max(...rows.map((r) => r.getBoundingClientRect().bottom)) - top0) / k;
     const h = Math.max(320, bottom - top + 220);
-    return this.flyTo(this.fitRect({ x: c.x - 60, y: (top + bottom) / 2 - h / 2, w: W + 120, h }), 700);
+    // Never wider than the card's own reading view, so a narrow screen keeps the code as large as it can.
+    const { aw } = this.area();
+    const pad = aw < 500 ? 12 : 60;
+    return this.flyTo(this.fitRect({ x: c.x - pad, y: (top + bottom) / 2 - h / 2, w: W + pad * 2, h }), 700);
   }
 
   /**
@@ -995,10 +1093,11 @@ export class BoardEngine {
     const first = [...hits.keys()][0];
     if (first) void this.openCard(first, tok, hits.get(first)!);
     // Frame the card that opened on the cited lines; the others stay lit where they are.
-    const rects = (first ? [first] : ids).map((id) => this.cardRect(this.cards.get(id)!));
+    const rects = ids.map((id) => this.cards.get(id)!).map((c) => ({ x: c.x - 60, y: c.y - 60, w: W + 120, h: 260 }));
     const x = Math.min(...rects.map((r) => r.x)), y = Math.min(...rects.map((r) => r.y));
     const R = { x, y, w: Math.max(...rects.map((r) => r.x + r.w)) - x, h: Math.max(...rects.map((r) => r.y + r.h)) - y };
-    requestAnimationFrame(() => requestAnimationFrame(() => void this.flyTo(this.fitRect(R), 700)));
+    const view = () => (first ? this.cardView(this.cards.get(first)!) : this.fitRect(R));
+    requestAnimationFrame(() => requestAnimationFrame(() => void this.flyTo(view(), 700)));
     return true;
   }
   /** Clears what an answer pointed at. */
@@ -1019,7 +1118,7 @@ export class BoardEngine {
     if (root.classList.contains("open")) return this.closeCard(entry.data.id);
     const tok = ++this.tok;
     void this.openCard(entry.data.id, tok, this.hotFor(entry));
-    void this.flyTo(this.fitRect(this.cardRect(entry)), 700);
+    void this.flyTo(this.cardView(entry), 700);
   }
 
   private bindPointer() {

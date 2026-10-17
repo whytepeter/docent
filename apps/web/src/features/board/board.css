@@ -299,3 +299,30 @@
 .bd-val { position: absolute; right: 10px; top: 50%; max-width: 60%; overflow: hidden; text-overflow: ellipsis; padding: 0 9px; border-radius: 7px; background: var(--st-y); color: var(--st-ink); font: 700 15px/22px var(--hand); white-space: nowrap; box-shadow: 1px 3px 8px rgba(0, 0, 0, .25); transform: translateY(-50%) rotate(-1.2deg); animation: bd-val-in .35s var(--ease-out) both; }
 @keyframes bd-val-in { from { opacity: 0; transform: translateY(-50%) rotate(-1.2deg) scale(.85); } }
 .bd-chat-cached { margin: 0; font-size: 12px; color: var(--mut); }
+
+/* Zoomed out (see FAR in engine.ts): each card is just its number and title, and the arrows keep their labels,
+   all drawn at a fixed size on screen (--inv is 1 / zoom) so the whole board reads at a glance. Its code, role
+   and notes come back as you zoom in. Faded cards the tour hasn't reached stay faded. */
+.bd-stage.far .bd-head { display: block; min-height: 0; padding: calc(9px * var(--inv)) calc(10px * var(--inv)); }
+.bd-stage.far .bd-num { display: inline-grid; width: auto; min-width: calc(22px * var(--inv)); height: calc(22px * var(--inv)); padding: 0 calc(6px * var(--inv)); border-radius: calc(7px * var(--inv)); font-size: calc(12px * var(--inv)); margin-right: calc(6px * var(--inv)); vertical-align: calc(-3px * var(--inv)); }
+.bd-stage.far :is(.bd-tt, .bd-tt b) { display: inline; }
+.bd-stage.far .bd-tt b { font-size: max(22px, calc(13px * var(--inv))); line-height: 1.3; }
+.bd-stage.far :is(.bd-tt span, .bd-role, .bd-chev) { display: none; }
+.bd-stage.far .bd-bw { grid-template-rows: 0fr; transition: none; }
+.bd-stage.far .bd-stat { position: static; display: inline-block; margin: calc(2px * var(--inv)) 0 0 calc(6px * var(--inv)); font-size: calc(11px * var(--inv)); padding: 0 calc(7px * var(--inv)); vertical-align: top; max-width: none; }
+.bd-stage.far .bd-stat:not(.show) { display: none; }
+.bd-stage.far .bd-card { border-width: calc(1.5px * var(--inv)); border-radius: calc(10px * var(--inv)); }
+.bd-stage.far .bd-card.act { box-shadow: 0 0 0 calc(3px * var(--inv)) var(--accsoft), var(--bshadow); }
+.bd-stage.far .bd-edgelab { font-size: calc(11px * var(--inv)); transform: translateY(calc(-5px * var(--inv))); paint-order: stroke; stroke: var(--canvas); stroke-width: calc(4px * var(--inv)); stroke-linejoin: round; }
+.bd-stage.far .bd-edge { stroke-width: calc(1.6px * var(--inv)); stroke-dasharray: calc(1.5px * var(--inv)) calc(5px * var(--inv)); }
+.bd-stage.far .bd-edge.on { stroke-dasharray: none; }
+.bd-stage.far .bd-frame { border-width: calc(1.5px * var(--inv)); }
+.bd-stage.far .bd-frame b { top: auto; bottom: calc(100% - 18px); font-size: max(30px, calc(14px * var(--inv))); padding: calc(6px * var(--inv)) calc(10px * var(--inv)) calc(7px * var(--inv)); }
+.bd-stage.far .bd-packet { width: calc(12px * var(--inv)); height: calc(12px * var(--inv)); margin: calc(-6px * var(--inv)) 0 0 calc(-6px * var(--inv)); box-shadow: 0 0 0 calc(4px * var(--inv)) var(--accsoft); }
+
+/* The narrator's voice, switched from the story bar: a chevron beside the speaker opens the menu above the bar's right end. */
+.bd-fl .bd-voice-more { min-width: 22px !important; width: 22px; padding: 0 !important; margin-left: -4px; }
+.bd-fl .bd-voice-more svg { transform: rotate(-90deg); transition: transform .2s var(--ease-out); }
+.bd-fl .bd-voice-more.on { background: var(--accsoft); color: var(--acc); }
+.bd-fl .bd-voice-more.on svg { transform: rotate(90deg); }
+.bd-voice-menu { position: fixed; z-index: 26; bottom: calc(var(--bar-h, 120px) + 24px); right: calc(50% - min(430px, 50vw - 16px)); width: min(340px, calc(100vw - 32px)); }
