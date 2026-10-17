@@ -23,15 +23,41 @@
 .sheet-body { overflow: auto; flex: 1; background: var(--paper); }
 
 /* The code sheet is always dark, like the code on the board's cards, in either theme. */
-.sheet { --sheet-bg: #14171F; --sheet-ink: #D8DEEA; --sheet-mut: #6D7890; --sheet-line: #262B38; --sheet-hot: #262F52;
-  background: var(--sheet-bg); color: var(--sheet-ink); border-color: var(--sheet-line); color-scheme: dark; }
+.sheet { --sheet-bg: var(--editor-bg, #14171F); --sheet-ink: var(--editor-fg, #D8DEEA); --sheet-mut: var(--editor-mut, #6D7890); --sheet-line: var(--editor-line, #262B38); --sheet-hot: var(--editor-hot, #262F52);
+  background: var(--sheet-bg); color: var(--sheet-ink); border-color: var(--sheet-line); color-scheme: var(--editor-scheme, dark); }
 .sheet header { border-bottom-color: var(--sheet-line); }
 .sheet h3 { color: var(--sheet-ink); }
 .sheet h3 span { color: var(--sheet-mut); }
 .sheet .path { color: var(--sheet-mut); }
 .sheet button { color: var(--sheet-mut); }
-.sheet button:hover { color: var(--sheet-ink); background: rgba(255, 255, 255, .06); }
+.sheet button:hover { color: var(--sheet-ink); background: color-mix(in srgb, var(--sheet-ink) 8%, transparent); }
 .sheet .sheet-body { background: var(--sheet-bg); }
 .sheet .code .shiki, .sheet .code .shiki span { color: var(--shiki-dark) !important; }
 .sheet .code .line::before { color: var(--sheet-mut); opacity: 1; }
 .sheet .code .line.on { background: var(--sheet-hot); box-shadow: inset 3px 0 0 var(--accent); }
+
+/* Editor theme in Settings: Dark and Light, each a mini editor window in that theme's own colours. */
+.ed-pick { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; max-width: 420px; }
+@media (max-width: 560px) { .ed-pick { grid-template-columns: 1fr; } }
+.ed-pick > button { display: flex; flex-direction: column; gap: 7px; padding: 6px 6px 8px; border: 1.5px solid var(--line); border-radius: 14px; background: var(--card); color: var(--ink); text-align: left; cursor: pointer; transition: border-color .15s, box-shadow .15s; }
+.ed-pick > button:hover { border-color: var(--line-2); }
+.ed-pick > button[aria-checked="true"] { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.ed-name { display: flex; align-items: center; gap: 7px; padding: 0 3px; font: 600 12.5px var(--sans); }
+.ed-radio { display: grid; place-items: center; width: 14px; height: 14px; border-radius: 50%; border: 1.5px solid var(--line-2); color: var(--on-accent); }
+[aria-checked="true"] > .ed-name .ed-radio { background: var(--accent); border-color: var(--accent); }
+
+.ed-mini { display: flex; flex-direction: column; border: 1px solid; border-radius: 8px; overflow: hidden; font: 8.5px/1.6 var(--mono); box-shadow: 0 6px 16px -10px rgba(0, 0, 0, .45); }
+.ed-loading { height: 158px; align-items: center; justify-content: center; border-color: var(--line); }
+.ed-bar { display: flex; align-items: flex-end; gap: 8px; height: 20px; padding: 0 0 0 7px; border-bottom: 1px solid; }
+.ed-dots { display: flex; gap: 3px; align-self: center; }
+.ed-dots i { width: 5px; height: 5px; border-radius: 50%; background: #ff5f57; }
+.ed-dots i:nth-child(2) { background: #febc2e; }
+.ed-dots i:nth-child(3) { background: #28c840; }
+.ed-tab { position: relative; top: 1px; padding: 0 8px; height: 16px; display: flex; align-items: center; border: 1px solid; border-bottom: 0; border-radius: 4px 4px 0 0; font: 8px var(--mono); }
+.ed-code { display: block; padding: 4px 0; }
+.ed-line { display: flex; white-space: pre; }
+.ed-gutter { flex: none; width: 20px; padding-right: 7px; text-align: right; user-select: none; }
+.ed-text { overflow: hidden; }
+.ed-cursor { display: inline-block; width: 1.5px; height: 1.15em; vertical-align: text-bottom; margin-left: 1px; animation: ed-blink 1s steps(2) infinite; }
+.ed-status { display: flex; justify-content: space-between; gap: 8px; padding: 1px 7px; border-top: 1px solid; font: 7.5px/1.7 var(--sans); }
+@keyframes ed-blink { 50% { opacity: 0; } }

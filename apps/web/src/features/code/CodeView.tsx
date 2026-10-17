@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../../shared/api/client.ts";
 import { useQuery } from "../../shared/api/useQuery.ts";
+import { useStore } from "../../shared/state/store.ts";
+import { editorThemeStore } from "./editor-theme.ts";
 import { toHtml } from "./highlighter.ts";
 import "./code.css";
 
@@ -14,6 +16,7 @@ export function CodeView({ path, from, to, focus, scrollToFocus = false }: {
 }) {
   const { data, error } = useQuery(`source:${path}:${from ?? ""}:${to ?? ""}`, () => api.source(path, from, to));
   const [html, setHtml] = useState("");
+  const theme = useStore(editorThemeStore);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -23,7 +26,7 @@ export function CodeView({ path, from, to, focus, scrollToFocus = false }: {
     return () => {
       live = false;
     };
-  }, [data, path, focus?.[0], focus?.[1]]);
+  }, [data, path, focus?.[0], focus?.[1], theme]);
 
   useEffect(() => {
     if (!html || !scrollToFocus || !ref.current) return;

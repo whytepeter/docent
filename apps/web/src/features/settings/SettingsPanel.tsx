@@ -5,6 +5,7 @@ import { invalidateAll } from "../../shared/api/useQuery.ts";
 import { useStore } from "../../shared/state/store.ts";
 import { themeStore, type Theme } from "../../shared/state/theme.ts";
 import { Icon } from "../../shared/ui/index.ts";
+import { EditorThemePicker } from "../code/index.ts";
 import "./settings.css";
 
 const CLOUD: { id: CloudVoiceProvider; name: string; keyUrl: string }[] = [
@@ -358,6 +359,9 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                   ))}
                 </div>
               </div>
+              <p className="set-label">Editor theme</p>
+              <p className="set-hint">How code looks on the cards and in the code sheet, whichever theme the page is in.</p>
+              <EditorThemePicker />
             </>
           )}
           {s && tab === "claude" && (

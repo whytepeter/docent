@@ -4,7 +4,7 @@
   /* Canvas and dots measured from FigJam: neutral, not tinted, dots clearly there but quiet. */
   --canvas: #F5F5F5; --dot: #C6C6C6; --panel: var(--card); --bline: var(--line-2); --bink: var(--ink); --mut: var(--ink-2);
   --acc: var(--accent); --acc-ink: var(--on-accent); --accsoft: var(--accent-soft); --ok: var(--sage); --bad: var(--brick); --warnc: var(--amber);
-  --code: #14171F; --code-ink: #D8DEEA; --code-mut: #6D7890; --hotl: #262F52; --bshadow: var(--shadow-card);
+  --code: var(--editor-bg, #14171F); --code-ink: var(--editor-fg, #D8DEEA); --code-mut: var(--editor-mut, #6D7890); --hotl: var(--editor-hot, #262F52); --bshadow: var(--shadow-card);
   --st-y: #FFE98A; --st-b: #CFE0FF; --st-g: #CDEFD6; --st-p: #FFD3E1; --st-ink: #2B2A1E;
   --hand: "Kalam", "Comic Sans MS", cursive; --head: var(--display); --ui: var(--sans); --mono2: var(--mono);
   color: var(--bink); font: 14px/1.45 var(--ui);

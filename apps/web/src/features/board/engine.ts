@@ -134,6 +134,23 @@ export class BoardEngine {
     void this.runStep(clamp(o.startAt ?? 0, 0, Math.max(0, board.steps.length - 1)), false);
   }
 
+  /**
+   * The editor theme changed: highlight every card's code again. Only each line's code is swapped, so the
+   * lines marked on the tour and the example's values stay where they are.
+   */
+  rehighlight() {
+    for (const c of this.cards.values()) {
+      void this.o.highlight(c.data.lines, c.data.file, c.data.start).then((h) => {
+        c.html = h;
+        c.code.querySelectorAll<HTMLElement>(".bd-ln[data-i]").forEach((row) => {
+          const span = row.querySelector(":scope > span:not(.bd-val)");
+          const html = h[Number(row.dataset.i)];
+          if (span && html !== undefined) span.innerHTML = html || " ";
+        });
+      });
+    }
+  }
+
   /** New labels from the double-check behind the board: refresh the notes without restarting anything. */
   refresh(board: Board) {
     this.board = board;

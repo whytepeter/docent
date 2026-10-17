@@ -4,7 +4,7 @@ import { api } from "../../shared/api/client.ts";
 import { useQuery } from "../../shared/api/useQuery.ts";
 import { nextRate, rateStore, voiceOnStore } from "../../shared/state/playback.ts";
 import { useStore } from "../../shared/state/store.ts";
-import { openCode, toHtml } from "../code/index.ts";
+import { editorThemeStore, openCode, toHtml } from "../code/index.ts";
 import { timeLeft, useNow, useProgress } from "../jobs/index.ts";
 import { Icon, ThemeButton } from "../../shared/ui/index.ts";
 import { Chat } from "./Chat.tsx";
@@ -159,6 +159,11 @@ function BoardView({ id, board, job, repoName, onHome, onSettings }: { id: strin
   useEffect(() => {
     engine.current?.refresh(board);
   }, [board]);
+  // A new editor theme recolours the code on the cards in place.
+  useEffect(() => {
+    const off = editorThemeStore.subscribe(() => engine.current?.rehighlight());
+    return () => void off();
+  }, []);
   // Remember how far the tour got; reaching the last step counts as watched.
   const at = es?.step;
   useEffect(() => {
