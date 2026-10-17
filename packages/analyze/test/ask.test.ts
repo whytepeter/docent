@@ -25,6 +25,7 @@ function fakeLlm(answer: unknown, verdicts: unknown): LlmProvider & { prompts: s
   let call = 0;
   return {
     id: "api",
+    canRead: false,
     prompts,
     describe: () => "fake",
     ask: async (opts) => {

@@ -194,7 +194,7 @@ export async function writeBoard(llm: LlmProvider, facts: Facts, root: string, f
     "",
     flowSource(root, flow.files),
   ].join("\n");
-  const result = await llm.ask({ system: BOARD_SYSTEM, prompt, schema: BoardSchema, tools: llm.id === "claude-code" ? "read" : "none", cwd: root, effort: "medium", signal });
+  const result = await llm.ask({ system: BOARD_SYSTEM, prompt, schema: BoardSchema, tools: llm.canRead ? "read" : "none", cwd: root, effort: "medium", signal });
   // The citation check is mechanical and instant, so it runs before the board is shown; the second reader runs behind it.
   return citeBoard(cleanBoard(result.data, facts, root, flow.id, result.model), facts, root);
 }

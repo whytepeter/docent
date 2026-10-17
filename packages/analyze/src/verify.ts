@@ -40,7 +40,7 @@ export async function verifyFeature(llm: LlmProvider, facts: Facts, root: string
     system: SYSTEM,
     prompt,
     schema: VerifySchema,
-    tools: llm.id === "claude-code" ? "read" : "none",
+    tools: llm.canRead ? "read" : "none",
     cwd: root,
     effort: "medium",
     signal,

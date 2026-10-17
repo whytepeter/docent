@@ -1,4 +1,4 @@
-import type { AskEvent, AskRequest, AskedBefore, BoardState, FlowsState, CloudVoiceProvider, LocalModel, Settings, VoiceClip, VoiceOption, VoiceProvider, VoiceStatus, FeaturesState, Job, SourceSlice, Workspace, CloneJob, GithubStart } from "@docent/contracts";
+import type { AiProviderId, AskEvent, AskRequest, AskedBefore, BoardState, FlowsState, CloudVoiceProvider, LocalModel, Settings, VoiceClip, VoiceOption, VoiceProvider, VoiceStatus, FeaturesState, Job, SourceSlice, Workspace, CloneJob, GithubStart } from "@docent/contracts";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   // The server refuses state changes without this header, which other sites can't send.
@@ -61,7 +61,7 @@ export const api = {
   settings: () => request<Settings>("/api/settings"),
   setKey: (provider: CloudVoiceProvider | "anthropic", key: string | null) => request<Settings>("/api/settings/keys", { ...json({ provider, key }), method: "PUT" }),
   setVoice: (patch: { provider?: VoiceProvider; voice?: string; speed?: number; expressive?: boolean; pronunciations?: Record<string, string> }) => request<Settings>("/api/settings/voice", { ...json(patch), method: "PUT" }),
-  setClaude: (mode: "claude-code" | "api") => request<Settings>("/api/settings/claude", { ...json({ mode }), method: "PUT" }),
+  setAi: (provider: AiProviderId) => request<Settings>("/api/settings/ai", { ...json({ provider }), method: "PUT" }),
   voices: (provider: VoiceProvider, q: string) => request<VoiceOption[]>(`/api/settings/voices?provider=${provider}&q=${q ? encodeURIComponent(q) : ""}`),
   previewVoice: (provider: VoiceProvider, voice: string) => request<VoiceClip>("/api/settings/voices/preview", json({ provider, voice })),
   voice: () => request<VoiceStatus>("/api/voice"),

@@ -60,7 +60,7 @@ const pending = (c: RawClaim): AnalysisClaim => ({ ...c, kind: "behavior", evide
 
 /** Writes the overview in one short Claude pass, then runs the citation check (the second reader is checkOverview). */
 export async function writeOverview(llm: LlmProvider, facts: Facts, root: string, { signal }: { signal?: AbortSignal } = {}): Promise<ProjectOverview> {
-  const result = await llm.ask({ system: OVERVIEW_SYSTEM, prompt: discoveryDigest(facts), schema: OverviewSchema, tools: llm.id === "claude-code" ? "read" : "none", cwd: root, effort: "low", signal });
+  const result = await llm.ask({ system: OVERVIEW_SYSTEM, prompt: discoveryDigest(facts), schema: OverviewSchema, tools: llm.canRead ? "read" : "none", cwd: root, effort: "low", signal });
   const d = result.data;
   const notes: string[] = [];
   const files = facts.files.map((f) => f.path);

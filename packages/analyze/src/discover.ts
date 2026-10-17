@@ -21,7 +21,7 @@ export async function discoverFeatures(llm: LlmProvider, facts: Facts, root: str
     system: SYSTEM,
     prompt: `Here are the facts extracted from the repository. Propose its feature map.\n\n${discoveryDigest(facts)}`,
     schema: DiscoverySchema,
-    tools: llm.id === "claude-code" ? "read" : "none",
+    tools: llm.canRead ? "read" : "none",
     cwd: root,
     effort: "medium",
     signal,

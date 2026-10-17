@@ -112,14 +112,23 @@ function printFn(facts: Facts, name: string) {
 }
 
 async function doctor() {
-  const { pickProvider, z } = await import("@docent/llm");
+  const { pickProvider, providerStatuses, z } = await import("@docent/llm");
+  console.log(`\n  ${bold("AI providers")}`);
+  for (const p of providerStatuses()) {
+    const state = p.id === "api"
+      ? (p.signedIn ? "key set" : "no key")
+      : !p.installed ? "not installed" : p.signedIn === false ? "not signed in" : `ready${p.detail ? ` · ${p.detail}` : ""}`;
+    console.log(`    ${p.name.padEnd(18)} ${dim(state)}${p.version ? dim(`  ${p.version}`) : ""}`);
+    if (p.id !== "api" && !p.installed) console.log(dim(`      install: ${p.install}   then: ${p.signIn}`));
+    else if (p.id !== "api" && p.signedIn === false) console.log(dim(`      sign in: ${p.signIn}`));
+  }
   const provider = pickProvider();
-  console.log(`\n  ${bold("Claude")}  ${provider.describe()}`);
+  console.log(`\n  ${bold("Using")}  ${provider.describe()}`);
   process.stdout.write(dim("  checking… "));
   const started = Date.now();
   const r = await provider.ask({ system: "Answer in the requested JSON.", prompt: "Reply with ok: true.", schema: z.object({ ok: z.boolean() }), effort: "low" });
   console.log(r.data.ok ? `\x1b[32mworks\x1b[0m ${dim(`(${r.model}, ${((Date.now() - started) / 1000).toFixed(1)}s)`)}` : "unexpected answer");
-  console.log(dim("  Switch with DOCENT_PROVIDER=api or ~/.docent/config.json {\"provider\": \"api\"}.\n"));
+  console.log(dim("  Choose in Settings → AI, or with DOCENT_PROVIDER=claude-code|codex|api.\n"));
 }
 
 async function discover(repo: string) {

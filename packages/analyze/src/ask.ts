@@ -59,7 +59,7 @@ export async function answerQuestion(
   ].join("\n");
 
   onStage?.("answering");
-  const result = await llm.ask({ system: SYSTEM, prompt, schema: AnswerSchema, tools: llm.id === "claude-code" ? "read" : "none", cwd: root, effort: "medium", signal });
+  const result = await llm.ask({ system: SYSTEM, prompt, schema: AnswerSchema, tools: llm.canRead ? "read" : "none", cwd: root, effort: "medium", signal });
 
   onStage?.("checking");
   const checked = makeChecker(root, facts).apply({

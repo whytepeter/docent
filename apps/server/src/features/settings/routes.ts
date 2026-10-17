@@ -1,6 +1,6 @@
 import { Hono } from "hono";
-import type { LocalModel, Settings, VoiceClip, VoiceOption, VoiceStatus } from "@docent/contracts";
-import { pickProvider, readConfig, writeConfig } from "@docent/llm";
+import type { AiProviderId, LocalModel, Settings, VoiceClip, VoiceOption, VoiceStatus } from "@docent/contracts";
+import { chosenProvider, isProviderId as isAiProvider, pickProvider, providerStatuses, readConfig, writeConfig } from "@docent/llm";
 import {
   adapterFor, clipAudio, CLOUD_PROVIDERS, DEFAULT_PRONUNCIATIONS, downloadKokoro, isCloud, KEY_ENV, kokoroStatus, pickVoice, PROVIDERS,
   removeKokoro, setupHint, setVoiceSettings, speak, testKey, voiceSettings, type CloudProviderId, type ProviderId,
@@ -11,11 +11,15 @@ const SAMPLE = "This part is solid. This part I wouldn't trust, and here's why."
 
 function settings(): Settings {
   const v = voiceSettings();
-  let claude = "unavailable";
+  const chosen = chosenProvider();
+  let provider: AiProviderId = chosen ?? "api";
+  let describe = "unavailable";
   try {
-    claude = pickProvider().describe();
+    const p = pickProvider();
+    provider = p.id;
+    describe = p.describe();
   } catch (e) {
-    claude = (e as Error).message;
+    describe = (e as Error).message;
   }
   return {
     voice: {
@@ -28,7 +32,7 @@ function settings(): Settings {
       keys: Object.fromEntries(CLOUD_PROVIDERS.map((p) => [p, hint(process.env[KEY_ENV[p]])])) as Record<CloudProviderId, string | null>,
       local: { kokoro: kokoroStatus() },
     },
-    claude: { mode: readConfig().provider === "api" ? "api" : "claude-code", describe: claude, apiKey: hint(process.env.ANTHROPIC_API_KEY) },
+    ai: { provider, chosen: !!chosen, describe, apiKey: hint(process.env.ANTHROPIC_API_KEY), providers: providerStatuses() },
   };
 }
 
@@ -85,10 +89,12 @@ export function settingsRoutes(): Hono {
       });
       return c.json<Settings>(settings());
     })
-    .put("/settings/claude", async (c) => {
-      const { mode } = (await c.req.json().catch(() => ({}))) as { mode?: string };
-      if (mode !== "api" && mode !== "claude-code") return c.json({ error: "Unknown mode" }, 400);
-      writeConfig({ ...readConfig(), provider: mode });
+    .put("/settings/ai", async (c) => {
+      const { provider } = (await c.req.json().catch(() => ({}))) as { provider?: string };
+      if (!isAiProvider(provider)) return c.json({ error: "Unknown provider" }, 400);
+      const status = providerStatuses().find((p) => p.id === provider);
+      if (status && !status.installed) return c.json({ error: `${status.name} isn't installed on this computer yet` }, 409);
+      writeConfig({ ...readConfig(), provider });
       return c.json<Settings>(settings());
     })
     .get("/settings/voices", async (c) => {

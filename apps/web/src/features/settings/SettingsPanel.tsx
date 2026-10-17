@@ -6,6 +6,7 @@ import { useStore } from "../../shared/state/store.ts";
 import { themeStore, type Theme } from "../../shared/state/theme.ts";
 import { Icon } from "../../shared/ui/index.ts";
 import { EditorThemePicker } from "../code/index.ts";
+import { AiProviders } from "./AiSettings.tsx";
 import "./settings.css";
 
 const CLOUD: { id: CloudVoiceProvider; name: string; keyUrl: string }[] = [
@@ -223,7 +224,7 @@ function Pronunciations({ settings, onChange }: { settings: Settings; onChange: 
   );
 }
 
-type Tab = "narrator" | "claude" | "appearance";
+type Tab = "narrator" | "ai" | "appearance";
 const THEMES: [Theme, string, string, "screen" | "sun" | "moon"][] = [
   ["system", "System", "Follows your computer", "screen"],
   ["light", "Light", "Always light", "sun"],
@@ -231,7 +232,7 @@ const THEMES: [Theme, string, string, "screen" | "sun" | "moon"][] = [
 ];
 const SPEEDS = [0.8, 0.9, 1, 1.1, 1.25];
 
-/** Settings: the narrator (provider, key, voice, speed, expression) and how Docent reaches Claude. */
+/** Settings: the narrator (provider, key, voice, speed, expression) and which AI reads the code. */
 export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const [s, setS] = useState<Settings | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -262,7 +263,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
       <section className="settings" role="dialog" aria-modal="true" aria-labelledby="set-title">
         <nav className="set-nav" aria-label="Settings sections">
           <h2 id="set-title">Settings</h2>
-          {([["narrator", "Narrator", "sound"], ["claude", "Claude", "claude"], ["appearance", "Appearance", "sun"]] as const).map(([id, name, icon]) => (
+          {([["narrator", "Narrator", "sound"], ["ai", "AI", "claude"], ["appearance", "Appearance", "sun"]] as const).map(([id, name, icon]) => (
             <button key={id} className={tab === id ? "on" : ""} aria-current={tab === id} onClick={() => setTab(id)}>
               <Icon name={icon} size={16} />{name}
             </button>
@@ -364,20 +365,12 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
               <EditorThemePicker />
             </>
           )}
-          {s && tab === "claude" && (
+          {s && tab === "ai" && (
             <>
-              <header className="set-h"><h3>Claude</h3><p>Docent reads your code with Claude. Choose how it signs in.</p></header>
+              <header className="set-h"><h3>AI</h3><p>Docent reads your code with an AI. Use a subscription you already have, or an API key.</p></header>
               <div className="set-group">
-                <div className="set-tiles col" role="radiogroup" aria-label="How Docent reaches Claude">
-                  <button role="radio" aria-checked={s.claude.mode === "claude-code"} onClick={() => void api.setClaude("claude-code").then(update, fail)}>
-                    <b>Your subscription</b><span>Uses Claude Code on this computer; nothing to paste</span>
-                  </button>
-                  <button role="radio" aria-checked={s.claude.mode === "api"} onClick={() => void api.setClaude("api").then(update, fail)}>
-                    <b>API key</b><span>Pay per use with an Anthropic key</span>
-                  </button>
-                </div>
-                <p className="set-hint">{s.claude.describe}</p>
-                {s.claude.mode === "api" && <KeyField label="Anthropic API key" saved={s.claude.apiKey} url="https://console.anthropic.com/settings/keys" onSave={async (k) => update(await api.setKey("anthropic", k))} />}
+                <AiProviders s={s} update={update} fail={fail} />
+                {s.ai.provider === "api" && <KeyField label="Anthropic API key" saved={s.ai.apiKey} url="https://console.anthropic.com/settings/keys" onSave={async (k) => update(await api.setKey("anthropic", k))} />}
               </div>
             </>
           )}

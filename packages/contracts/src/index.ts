@@ -268,7 +268,38 @@ export interface Settings {
     pronunciations: Record<string, string>;
     defaults: Record<string, string>;
   };
-  claude: { mode: "claude-code" | "api"; describe: string; apiKey: string | null };
+  ai: {
+    /** The provider stages run on (chosen, or the first one that works). */
+    provider: AiProviderId;
+    /** Whether `provider` was picked in Settings (or DOCENT_PROVIDER) rather than by default. */
+    chosen: boolean;
+    describe: string;
+    apiKey: string | null;
+    providers: AiProviderInfo[];
+  };
+}
+
+/** Subscription CLIs first, then the Anthropic API with a key. */
+export type AiProviderId = "claude-code" | "codex" | "api";
+
+/** One way Docent can reach a model, and whether it's ready on this computer. */
+export interface AiProviderInfo {
+  id: AiProviderId;
+  name: string;
+  vendor: string;
+  /** Which plan it runs on ("ChatGPT Plus, Pro…", "pay per use"). */
+  plan: string;
+  /** Which account it signs in with ("ChatGPT"). */
+  account?: string;
+  installed: boolean;
+  /** null when the CLI can't say without running a prompt. */
+  signedIn: boolean | null;
+  version?: string;
+  detail?: string;
+  /** Commands to install it and to sign in, for the how-to. */
+  install?: string;
+  signIn?: string;
+  docs: string;
 }
 
 /** Whether narration can be heard, and if not, why. */

@@ -84,7 +84,7 @@ export async function writeEpisode(
     "",
     featureDigest(facts, feature.files),
   ].join("\n");
-  const result = await llm.ask({ system: SYSTEM, prompt, schema: EpisodeSchema, tools: llm.id === "claude-code" ? "read" : "none", cwd: root, effort: "high", signal });
+  const result = await llm.ask({ system: SYSTEM, prompt, schema: EpisodeSchema, tools: llm.canRead ? "read" : "none", cwd: root, effort: "high", signal });
   const { episode, claims } = clean(result.data, facts);
 
   // Every claim the episode makes goes through the citation check and the second reader.
