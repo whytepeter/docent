@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { extract, git, loadCachedFacts, repoCacheDir, saveFacts, type Facts } from "@docent/extract";
+import { extract, git, isGitRepo, listPaths, loadCachedFacts, repoCacheDir, saveFacts, type Facts } from "@docent/extract";
 
 /** Agent state changes constantly and says nothing about the code. */
 const BOOKKEEPING = /^(\.wolf|\.claude|\.cursor|\.codex|\.agents)\//;
@@ -69,6 +69,19 @@ export class RepoService {
 
 function currentFingerprint(root: string): string {
   const hash = createHash("sha1");
+  // Without git (an unpacked zip), the files themselves are the fingerprint.
+  if (!isGitRepo(root)) {
+    for (const path of listPaths(root)) {
+      if (BOOKKEEPING.test(path)) continue;
+      try {
+        const st = statSync(join(root, path));
+        hash.update(`${path}\0${st.size}\0${st.mtimeMs}\n`);
+      } catch {
+        /* gone since it was listed */
+      }
+    }
+    return hash.digest("hex");
+  }
   try {
     hash.update(git(root, ["rev-parse", "HEAD"]));
     for (const line of git(root, ["status", "--porcelain", "-uall"]).split("\n")) {

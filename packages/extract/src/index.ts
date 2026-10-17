@@ -8,7 +8,7 @@ import type { Facts } from "./types.ts";
 export type * from "./types.ts";
 export { connections, findSymbols } from "./query.ts";
 export { loadCachedFacts, repoCacheDir, saveFacts } from "./cache.ts";
-export { git } from "./repo.ts";
+export { git, isGitRepo, listPaths } from "./repo.ts";
 export { findDuplicates } from "./duplicates.ts";
 
 const TS_LANGS = new Set(["ts", "tsx", "js", "jsx"]);
@@ -20,7 +20,7 @@ export interface ExtractOptions {
 /** Stage 1: read the repo, never write to it, and return the fact set. */
 export function extract(repoPath: string, { onStage = () => {} }: ExtractOptions = {}): Facts {
   const root = resolve(repoPath);
-  if (!isGitRepo(root)) throw new Error(`Not a git repository: ${root}`);
+  const hasGit = isGitRepo(root);
 
   onStage("listing files");
   const files = listFiles(root);
@@ -63,7 +63,7 @@ export function extract(repoPath: string, { onStage = () => {} }: ExtractOptions
     head = git(root, ["rev-parse", "--short", "HEAD"]).trim();
     dirty = git(root, ["status", "--porcelain"]).trim().length > 0;
   } catch {
-    warnings.push("No commits yet; history signals are empty.");
+    warnings.push(hasGit ? "No commits yet; history signals are empty." : "No git history (this folder isn't a git repository), so there are no commit messages to explain why code changed and no files that usually change together.");
   }
 
   return {

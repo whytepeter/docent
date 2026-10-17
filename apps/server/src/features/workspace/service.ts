@@ -1,13 +1,18 @@
 import { execFile } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import type { Hono } from "hono";
-import type { RecentRepo, Workspace as WorkspaceState } from "@docent/contracts";
+import type { RecentRepo, RepoSource, Workspace as WorkspaceState } from "@docent/contracts";
 import { RepoService } from "../repo/index.ts";
+import { checkoutSource } from "./github.ts";
+import { unzip } from "./zip.ts";
 
 const RECENT_FILE = join(homedir(), ".docent", "recent.json");
 const MAX_RECENT = 8;
+/** Zips Docent unpacked, one folder each, named after the zip. */
+export const IMPORTS = join(homedir(), ".docent", "imports");
 
 /**
  * Which codebase the app is showing. The user can open another folder at any time;
@@ -16,25 +21,47 @@ const MAX_RECENT = 8;
 export class Workspace {
   repo: RepoService | null = null;
   app: Hono | null = null;
+  private source: RepoSource | undefined;
 
   constructor(private readonly build: (repo: RepoService) => Hono, private readonly log: (line: string) => void = () => {}) {}
 
   state(): WorkspaceState {
     return {
-      current: this.repo ? { root: this.repo.root, name: basename(this.repo.root) } : null,
+      current: this.repo ? { root: this.repo.root, name: basename(this.repo.root), source: this.source } : null,
       recent: readRecent().filter((r) => r.root !== this.repo?.root && isDir(r.root)),
     };
   }
 
-  /** Opens a folder: reads it (or loads its cached facts) and points every route at it. */
-  open(path: string): WorkspaceState {
+  /**
+   * Opens a folder: reads it (or loads its cached facts) and points every route at it.
+   * Where it came from is remembered with it: a GitHub checkout says so itself, a zip is told by the import.
+   */
+  open(path: string, source?: RepoSource): WorkspaceState {
     const root = resolve(path.trim().replace(/^~(?=$|\/)/, homedir()));
     if (!isDir(root)) throw new Error(`Not a folder: ${root}`);
     const repo = RepoService.open(root, this.log);
     this.repo = repo;
     this.app = this.build(repo);
-    remember(root);
+    this.source = source ?? checkoutSource(root) ?? readRecent().find((r) => r.root === root)?.source ?? { kind: "folder" };
+    remember(root, this.source);
     return this.state();
+  }
+
+  /** Unpacks a zip into ~/.docent/imports/<name> (replacing an earlier import of the same name) and opens it. */
+  importZip(buf: Buffer, fileName: string): WorkspaceState {
+    const name = fileName.replace(/^.*[\\/]/, "").replace(/\.zip$/i, "").replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^[-.]+/, "").slice(0, 80) || "project";
+    mkdirSync(IMPORTS, { recursive: true });
+    const tmp = join(IMPORTS, `.partial-${randomUUID()}`);
+    try {
+      unzip(buf, tmp);
+    } catch (e) {
+      rmSync(tmp, { recursive: true, force: true });
+      throw e;
+    }
+    const dest = join(IMPORTS, name);
+    rmSync(dest, { recursive: true, force: true });
+    renameSync(tmp, dest);
+    return this.open(dest, { kind: "zip", file: fileName.replace(/^.*[\\/]/, "") });
   }
 }
 
@@ -116,8 +143,8 @@ function readRecent(): RecentRepo[] {
   }
 }
 
-function remember(root: string): void {
-  const next = [{ root, name: basename(root), openedAt: new Date().toISOString() }, ...readRecent().filter((r) => r.root !== root)].slice(0, MAX_RECENT);
+function remember(root: string, source: RepoSource): void {
+  const next = [{ root, name: basename(root), openedAt: new Date().toISOString(), source }, ...readRecent().filter((r) => r.root !== root)].slice(0, MAX_RECENT);
   mkdirSync(dirname(RECENT_FILE), { recursive: true });
   writeFileSync(RECENT_FILE, JSON.stringify(next, null, 2));
 }

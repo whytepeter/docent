@@ -270,17 +270,43 @@ export interface VoiceClip {
   words: { word: string; start: number; end: number }[];
 }
 
+/** Where a codebase came from: a folder on this machine, a GitHub clone Docent made, or a zip it unpacked. */
+export type RepoSource =
+  | { kind: "folder" }
+  | { kind: "github"; /** owner/repo */ repo: string; url: string; branch?: string }
+  | { kind: "zip"; file: string };
+
 export interface RecentRepo {
   root: string;
   name: string;
   openedAt: string;
+  source?: RepoSource;
 }
 
 /** Which codebase the app is showing, and the ones opened before. */
 export interface Workspace {
-  current: { root: string; name: string } | null;
+  current: { root: string; name: string; source?: RepoSource } | null;
   recent: RecentRepo[];
 }
+
+/** A GitHub clone or pull running on the server, polled by the welcome page. */
+export interface CloneJob {
+  id: string;
+  /** owner/repo */
+  repo: string;
+  action: "clone" | "pull";
+  /** What git is doing, in its words ("Receiving objects"). */
+  stage: string;
+  /** 0 to 100 over the whole clone, or null before git reports any. */
+  percent: number | null;
+  done: boolean;
+  error: string | null;
+  /** The checkout to open once done. */
+  path: string | null;
+}
+
+/** Asking for a GitHub repo: Docent already has a checkout of it, or it started cloning one. */
+export type GithubStart = { status: "exists"; repo: string; path: string } | { status: "cloning"; job: CloneJob };
 
 export interface Status {
   /** Commit the facts describe. */

@@ -1,4 +1,4 @@
-import type { AskEvent, AskRequest, AskedBefore, BoardState, FlowsState, Settings, VoiceClip, VoiceOption, VoiceProvider, VoiceStatus, FeaturesState, Job, SourceSlice, Workspace } from "@docent/contracts";
+import type { AskEvent, AskRequest, AskedBefore, BoardState, FlowsState, Settings, VoiceClip, VoiceOption, VoiceProvider, VoiceStatus, FeaturesState, Job, SourceSlice, Workspace, CloneJob, GithubStart } from "@docent/contracts";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   // The server refuses state changes without this header, which other sites can't send.
@@ -41,6 +41,12 @@ export const api = {
   openRepo: (path: string) => request<Workspace>("/api/workspace/open", json({ path })),
   findDropped: (name: string, children: string[]) => request<{ paths: string[] }>("/api/workspace/find", json({ name, children })),
   pickFolder: () => request<{ path: string | null }>("/api/workspace/pick", { method: "POST" }),
+  /** Clone a GitHub repo into Docent's own folder, or learn that Docent already has a copy. */
+  github: (url: string) => request<GithubStart>("/api/workspace/github", json({ url })),
+  pullGithub: (url: string) => request<CloneJob>("/api/workspace/github/pull", json({ url })),
+  cloneJob: (id: string) => request<CloneJob>(`/api/workspace/jobs/${q(id)}`),
+  /** Upload a zip; the server unpacks it under ~/.docent/imports and opens it. */
+  importZip: (file: File) => request<Workspace>(`/api/workspace/zip?name=${q(file.name)}`, { method: "POST", headers: { "content-type": "application/zip" }, body: file }),
   source: (path: string, from?: number, to?: number) =>
     request<SourceSlice>(`/api/source?path=${q(path)}${from ? `&from=${from}` : ""}${to ? `&to=${to}` : ""}`),
   features: () => request<FeaturesState>("/api/features"),

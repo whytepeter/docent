@@ -1,5 +1,5 @@
 import {
-  ArrowLeft, ArrowUp, Box, Check, ChevronRight, CircleAlert, FileCode, Folder, FolderDown, FolderOpen, LayoutGrid, Lock, Maximize, MessageCircle, Minus, Network, PanelLeft, PanelRight, Pause, Play, Plus, RotateCw, Search, Settings, SkipBack, SkipForward, Sparkles, Square, SquareFunction, Volume2, VolumeX, X, Sun, Moon, Monitor,
+  ArrowLeft, ArrowUp, Box, Check, ChevronRight, CircleAlert, FileArchive, FileCode, GitBranch, Folder, FolderDown, FolderOpen, LayoutGrid, Lock, Maximize, MessageCircle, Minus, Network, PanelLeft, PanelRight, Pause, Play, Plus, RotateCw, Search, Settings, SkipBack, SkipForward, Sparkles, Square, SquareFunction, Volume2, VolumeX, X, Sun, Moon, Monitor,
   type LucideIcon,
 } from "lucide-react";
 
@@ -40,6 +40,8 @@ const ICONS = {
   screen: Monitor,
   project: Folder,
   drop: FolderDown,
+  git: GitBranch,
+  zip: FileArchive,
 } satisfies Record<string, LucideIcon>;
 
 export type IconName = keyof typeof ICONS;

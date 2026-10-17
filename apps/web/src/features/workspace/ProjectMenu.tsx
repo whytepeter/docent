@@ -2,10 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../../shared/api/client.ts";
 import { useQuery } from "../../shared/api/useQuery.ts";
 import { Icon } from "../../shared/ui/index.ts";
-import { repoHash } from "./OpenRepo.tsx";
+import { repoHash, tabHint } from "./OpenRepo.tsx";
+import { where } from "./where.ts";
 import "./workspace.css";
-
-const home = (path: string) => path.replace(/^\/Users\/[^/]+/, "~");
 
 /** Opens a folder on the server, then loads its flows fresh (every view caches the open repo's data). */
 async function openFolder(path: string): Promise<void> {
@@ -65,6 +64,7 @@ export function ProjectMenu({ name }: { name: string }) {
     });
 
   const recent = workspace.data?.recent ?? [];
+  const current = workspace.data?.current;
   return (
     <div className="pm" ref={root}>
       <button className="bd-home-repo" onClick={() => setOpen((o) => !o)} aria-haspopup="menu" aria-expanded={open} title="Switch project">
@@ -76,16 +76,16 @@ export function ProjectMenu({ name }: { name: string }) {
         <div className="pm-pop" role="menu" aria-label="Projects">
           <div className="pm-label">Current project</div>
           <button className="pm-item here" role="menuitem" onClick={() => setOpen(false)}>
-            <span className="pm-folder"><Icon name="project" size={16} fill /></span>
-            <span className="pm-t"><b>{name}</b><span>{home(workspace.data?.current?.root ?? "")}</span></span>
+            <span className="pm-folder"><Icon name={current ? where(current).icon : "project"} size={16} fill /></span>
+            <span className="pm-t"><b>{name}</b><span>{current ? where(current).text : ""}</span></span>
             <Icon name="check" size={15} weight="bold" />
           </button>
 
           {recent.length > 0 && <div className="pm-label">Switch to</div>}
           {recent.map((r) => (
             <button key={r.root} className="pm-item" role="menuitem" disabled={!!busy} onClick={() => void go(r.root, () => openFolder(r.root))}>
-              <span className="pm-folder"><Icon name="project" size={16} fill /></span>
-              <span className="pm-t"><b>{r.name}</b><span>{home(r.root)}</span></span>
+              <span className="pm-folder"><Icon name={where(r).icon} size={16} fill /></span>
+              <span className="pm-t"><b>{r.name}</b><span>{where(r).text}</span></span>
               {busy === r.root ? <span className="spinner pm-spin" aria-label="Opening" /> : <Icon name="chevron" size={14} />}
             </button>
           ))}
@@ -93,6 +93,9 @@ export function ProjectMenu({ name }: { name: string }) {
           <div className="pm-sep" role="separator" />
           <button className="pm-item pm-action" role="menuitem" disabled={!!busy} onClick={() => void choose()}>
             {busy === "folder" ? <span className="spinner pm-spin" aria-hidden="true" /> : <Icon name="plus" size={16} />}Open another folder…
+          </button>
+          <button className="pm-item pm-action" role="menuitem" disabled={!!busy} onClick={() => { tabHint("github"); window.location.hash = "#/"; }}>
+            <Icon name="git" size={16} />From GitHub or a zip…
           </button>
           <button className="pm-item pm-action" role="menuitem" disabled={!!busy} onClick={() => (window.location.hash = "#/")}>
             <Icon name="area" size={16} />All projects

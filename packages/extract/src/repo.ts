@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { homedir } from "node:os";
 import { basename, extname, join } from "node:path";
 import type { FileFact, FileKind } from "./types.ts";
 
@@ -51,11 +52,62 @@ export function classify(path: string, head: string): FileKind {
 /** Build output and bundles: machine-made copies of the source that would swamp the call graph. */
 const BUILD_OUTPUT = /(^|\/)(dist|build|\.next|\.output|\.svelte-kit|coverage)\/|\.(min|bundle)\.[cm]?js$/;
 
-/** Tracked plus untracked-but-not-ignored files, as git sees them, minus build output. Never writes to the repo. */
+/**
+ * Tracked plus untracked-but-not-ignored files, as git sees them. A folder without git (an unpacked zip)
+ * is listed through an empty repo of Docent's own, so its .gitignore still applies and nothing is written to it.
+ */
+export function listPaths(root: string): string[] {
+  const args = ["ls-files", "-co", "--exclude-standard", "-z"];
+  let out: string;
+  try {
+    out = isGitRepo(root)
+      ? git(root, args)
+      : execFileSync("git", ["-C", root, "--git-dir", emptyGitDir(), "--work-tree", root, ...args], { encoding: "utf8", maxBuffer: 256 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] });
+  } catch {
+    return walk(root);
+  }
+  // A nested repo shows up as "dir/", not its files.
+  return out.split("\0").filter((p) => p && !p.endsWith("/"));
+}
+
+function emptyGitDir(): string {
+  const dir = join(homedir(), ".docent", "empty.git");
+  if (!existsSync(join(dir, "HEAD"))) {
+    mkdirSync(dir, { recursive: true });
+    execFileSync("git", ["init", "--bare", "-q", dir], { stdio: "ignore" });
+  }
+  return dir;
+}
+
+const SKIP_DIRS = new Set([".git", "node_modules", ".venv", "venv", "__pycache__"]);
+
+/** Without git at all: every file, skipping dependency folders and hidden ones other than agent state. */
+function walk(root: string, max = 50_000): string[] {
+  const out: string[] = [];
+  const visit = (rel: string) => {
+    let entries;
+    try {
+      entries = readdirSync(join(root, rel), { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      if (out.length >= max) return;
+      const path = rel ? `${rel}/${e.name}` : e.name;
+      if (e.isDirectory()) {
+        if (SKIP_DIRS.has(e.name) || (e.name.startsWith(".") && !AGENT_DIRS.includes(`${path}/`))) continue;
+        visit(path);
+      } else if (e.isFile()) out.push(path);
+    }
+  };
+  visit("");
+  return out;
+}
+
+/** The files Docent reads, minus build output. Never writes to the repo. */
 export function listFiles(root: string): FileFact[] {
-  const out = git(root, ["ls-files", "-co", "--exclude-standard", "-z"]);
   const files: FileFact[] = [];
-  for (const path of out.split("\0").filter(Boolean)) {
+  for (const path of listPaths(root)) {
     const ext = extname(path);
     if (!CODE_LANGS[ext] && !TEXT_EXTS.has(ext) && !AGENT_NAMES.has(basename(path))) continue;
     if (BUILD_OUTPUT.test(path)) continue;

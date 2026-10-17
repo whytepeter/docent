@@ -106,3 +106,21 @@ describe.skipIf(!existsSync(KYC))("extract on kyc-site-main (matches the hand-tr
     expect(facts.docs.find((d) => d.path === "ARCHITECTURE.md")?.mentions.some((m) => m.missing && m.text === "src/shared/services/document-submission.ts")).toBe(true);
   }, 60_000);
 });
+
+describe("extract on a folder without git", () => {
+  it("lists files (respecting .gitignore), builds the graph, and says plainly there is no history", () => {
+    const root = mkdtempSync(join(tmpdir(), "docent-nogit-"));
+    cpSync(join(import.meta.dirname, "fixture"), root, { recursive: true });
+    mkdirSync(join(root, "ignored"), { recursive: true });
+    writeFileSync(join(root, "ignored/skip.ts"), "export const skipped = 1;\n");
+    writeFileSync(join(root, ".gitignore"), "ignored/\n");
+    const facts = extract(root);
+    expect(existsSync(join(root, ".git"))).toBe(false);
+    expect(facts.files.some((f) => f.path === "src/lib/upload.ts")).toBe(true);
+    expect(facts.files.some((f) => f.path.startsWith("ignored/"))).toBe(false);
+    expect(facts.symbols.length).toBeGreaterThan(0);
+    expect(facts.commits).toEqual([]);
+    expect(facts.repo.head).toBeNull();
+    expect(facts.warnings.join(" ")).toMatch(/No git history/);
+  });
+});
