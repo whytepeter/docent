@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import type { Hono } from "hono";
@@ -36,6 +36,55 @@ export class Workspace {
     remember(root);
     return this.state();
   }
+}
+
+/**
+ * Where a folder dropped on the page lives. Browsers hand over only its name and what's inside, never the path,
+ * so this looks for folders with that name (recent ones, then Spotlight, then a shallow walk of home)
+ * and keeps those that hold the same top-level entries. Most likely first.
+ */
+export async function findDropped(name: string, children: string[]): Promise<string[]> {
+  const holds = (dir: string) => children.every((c) => existsSync(join(dir, c)));
+  const found = new Set<string>();
+  for (const r of readRecent()) if (basename(r.root) === name) found.add(r.root);
+  for (const p of await spotlight(name)) found.add(p);
+  if (![...found].some((p) => isDir(p) && holds(p))) for (const p of walkHome(name)) found.add(p);
+  return [...found].filter((p) => isDir(p) && holds(p) && !/\/(node_modules|\.Trash|Library)\//.test(p)).slice(0, 6);
+}
+
+function spotlight(name: string): Promise<string[]> {
+  if (process.platform !== "darwin") return Promise.resolve([]);
+  const query = `kMDItemFSName == "${name.replace(/["\\*]/g, "\\$&")}" && kMDItemContentType == "public.folder"`;
+  return new Promise((ok) => {
+    execFile("mdfind", ["-onlyin", homedir(), query], { timeout: 4000 }, (error, stdout) => ok(error ? [] : stdout.split("\n").filter(Boolean)));
+  });
+}
+
+/** Breadth-first under home, skipping hidden and dependency folders, capped so a drop never hangs. */
+function walkHome(name: string, maxDepth = 4, maxDirs = 15000): string[] {
+  const hits: string[] = [];
+  let queue = [homedir()];
+  let seen = 0;
+  for (let depth = 0; depth < maxDepth && queue.length && seen < maxDirs; depth++) {
+    const next: string[] = [];
+    for (const dir of queue) {
+      let entries;
+      try {
+        entries = readdirSync(dir, { withFileTypes: true });
+      } catch {
+        continue;
+      }
+      for (const e of entries) {
+        if (!e.isDirectory() || e.name.startsWith(".") || e.name === "node_modules" || e.name === "Library") continue;
+        const p = join(dir, e.name);
+        if (e.name === name) hits.push(p);
+        next.push(p);
+        if (++seen >= maxDirs) break;
+      }
+    }
+    queue = next;
+  }
+  return hits;
 }
 
 /** The native macOS folder dialog, shown over the browser. Resolves null when the user cancels. */

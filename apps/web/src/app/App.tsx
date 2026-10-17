@@ -3,16 +3,24 @@ import { BoardScreen, Tray } from "../features/board/index.ts";
 import { CodeSheet } from "../features/code/index.ts";
 import { Home } from "../features/home/index.ts";
 import { SettingsPanel } from "../features/settings/index.ts";
-import { OpenRepo } from "../features/workspace/index.ts";
+import { Booting, OpenRepo, ProjectMenu, ServerDown, repoHash } from "../features/workspace/index.ts";
 import { api } from "../shared/api/client.ts";
 import { useQuery } from "../shared/api/useQuery.ts";
 
-/** Two places: the flows of a codebase (#/), and one flow's whiteboard (#/board/<id>). */
+/**
+ * Three places: the welcome page (#/), a codebase's flows (#/repo/<name>),
+ * and one flow's whiteboard (#/repo/<name>/board/<id>).
+ */
+type Route = { page: "welcome" } | { page: "repo"; name: string; board: string | null } | { page: "legacy-board"; board: string };
+
 const subscribe = (l: () => void) => (window.addEventListener("hashchange", l), () => window.removeEventListener("hashchange", l));
-function useBoardId(): string | null {
+function useRoute(): Route {
   const hash = useSyncExternalStore(subscribe, () => window.location.hash);
-  const m = /^#\/board\/(.+)$/.exec(hash);
-  return m ? decodeURIComponent(m[1]!) : null;
+  const repo = /^#\/repo\/([^/]+)(?:\/board\/(.+))?$/.exec(hash);
+  if (repo) return { page: "repo", name: decodeURIComponent(repo[1]!), board: repo[2] ? decodeURIComponent(repo[2]) : null };
+  const old = /^#\/board\/(.+)$/.exec(hash);
+  if (old) return { page: "legacy-board", board: decodeURIComponent(old[1]!) };
+  return { page: "welcome" };
 }
 const go = (hash: string) => {
   if (window.location.hash !== hash) window.location.hash = hash;
@@ -21,19 +29,39 @@ const go = (hash: string) => {
 /** Docent is a whiteboard: pick a flow of the codebase, and it's drawn from the real code to tour, break and defend. */
 export function App() {
   const workspace = useQuery("workspace", api.workspace);
-  const boardId = useBoardId();
-  const [switching, setSwitching] = useState(false);
+  const route = useRoute();
   const [settings, setSettings] = useState(false);
   const repo = workspace.data?.current;
+  const wanted = route.page === "repo" ? route.name : null;
+  const showing = repo && wanted === repo.name ? repo : null;
 
-  // The server shows one codebase for every tab. If it switches (another tab, a restart), start over on it.
-  const shownRoot = repo?.root;
+  // Old links (#/board/<id>) belong to whichever codebase is open.
+  useEffect(() => {
+    if (route.page === "legacy-board" && workspace.data) go(repo ? repoHash(repo.name, route.board) : "#/");
+  }, [route, workspace.data, repo]);
+
+  // The address names a codebase the server isn't on (a bookmark, Back): open it if it's a recent one.
+  const [opening, setOpening] = useState<string | null>(null);
+  useEffect(() => {
+    if (!workspace.data || !wanted || wanted === repo?.name) return;
+    const known = workspace.data.recent.find((r) => r.name === wanted);
+    if (!known) return go("#/");
+    setOpening(wanted);
+    api.openRepo(known.root).then(() => window.location.reload(), () => go("#/"));
+  }, [workspace.data, wanted, repo]);
+
+  // The server shows one codebase for every tab. If another tab switches it, go back to the welcome page
+  // rather than reopening this one, so two tabs never fight over it.
+  const shownRoot = showing?.root;
   useEffect(() => {
     if (!shownRoot) return;
     const check = () => {
       if (document.hidden) return;
       api.workspace().then((w) => {
-        if (w.current?.root !== shownRoot) window.location.reload();
+        if (w.current?.root !== shownRoot) {
+          window.location.hash = "#/";
+          window.location.reload();
+        }
       }, () => {});
     };
     const t = setInterval(check, 4000);
@@ -44,20 +72,23 @@ export function App() {
     };
   }, [shownRoot]);
   useEffect(() => {
-    if (repo) document.title = `${repo.name} · Docent`;
-  }, [repo]);
+    if (showing) document.title = `${showing.name} · Docent`;
+  }, [showing]);
 
-  if (workspace.error) return <div className="center-msg" style={{ height: "100%" }}>Can’t reach the Docent server: {workspace.error.message}</div>;
-  if (!workspace.data) return null;
-  if (!repo) return <OpenRepo workspace={workspace.data} />;
+  if (workspace.error) return <ServerDown message={workspace.error.message} />;
+  if (!workspace.data) return <Booting />;
+  const settingsPanel = settings && <SettingsPanel onClose={() => setSettings(false)} />;
+  if (route.page === "welcome") return <><OpenRepo workspace={workspace.data} onSettings={() => setSettings(true)} />{settingsPanel}</>;
+  if (!showing) return <Booting label={opening ? `Opening ${opening}…` : undefined} />;
+  const board = route.page === "repo" ? route.board : null;
+  const openBoard = (id: string) => go(repoHash(showing.name, id));
   return (
     <>
-      {boardId
-        ? <BoardScreen key={boardId} id={boardId} repoName={repo.name} onHome={() => go("#/")} onSettings={() => setSettings(true)} />
-        : <Home repoName={repo.name} onOpen={(id) => go(`#/board/${encodeURIComponent(id)}`)} onSwitch={() => setSwitching(true)} onSettings={() => setSettings(true)} />}
-      <Tray current={boardId ?? null} onOpen={(id) => go(`#/board/${encodeURIComponent(id)}`)} />
-      {settings && <SettingsPanel onClose={() => setSettings(false)} />}
-      {switching && <OpenRepo workspace={workspace.data} onClose={() => setSwitching(false)} />}
+      {board
+        ? <BoardScreen key={board} id={board} repoName={showing.name} onHome={() => go(repoHash(showing.name))} onSettings={() => setSettings(true)} />
+        : <Home repoName={showing.name} switcher={<ProjectMenu name={showing.name} />} onOpen={openBoard} onBack={() => go("#/")} onSettings={() => setSettings(true)} />}
+      <Tray current={board} onOpen={openBoard} />
+      {settingsPanel}
       <CodeSheet />
     </>
   );

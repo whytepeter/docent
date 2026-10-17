@@ -1,58 +1,117 @@
-/* On its own it sits on the same dotted canvas as the home; over the canvas it's a light dim, not a heavy blur. */
-.open-repo {
-  position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 16px; overflow-y: auto;
-  background-color: var(--canvas, #F5F5F5); background-image: radial-gradient(circle at center, var(--dot, #C6C6C6) 0.9px, transparent 1.35px); background-size: 16px 16px;
-}
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .open-repo { --canvas: #1E1E1E; --dot: #474747; } }
-:root[data-theme="dark"] .open-repo { --canvas: #1E1E1E; --dot: #474747; }
-.open-repo.over { background: rgba(12, 14, 20, .28); backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px); animation: open-fade .18s var(--ease-out); }
+/* The welcome page sits on the same dotted canvas as the home (.bd-home), with one column of content. */
+.wel-body { width: min(640px, 100%); margin: 0 auto; padding: 6vh 16px 64px; display: flex; flex-direction: column; gap: 28px; }
 
-.open-card { position: relative; width: min(480px, 100%); padding: 24px; border-radius: 20px; border: 1px solid var(--line-2); background: var(--card); box-shadow: var(--shadow-float); animation: open-rise .26s var(--ease-out); }
-.open-head { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; }
-.open-head > div { flex: 1; min-width: 0; }
-.open-mark { flex: none; display: grid; place-items: center; }
-.open-mark .logo { display: block; }
-.open-head h1 { margin: 0; font: 700 19px/1.2 var(--display); letter-spacing: -.02em; color: var(--ink); }
-.open-head p { margin: 3px 0 0; font-size: 13px; color: var(--ink-2); }
-.open-x { align-self: flex-start; flex: none; width: 32px; height: 32px; margin: -6px -6px 0 0; border: 0; border-radius: 10px; background: none; color: var(--ink-3); display: grid; place-items: center; cursor: pointer; transition: background-color .15s, color .15s; }
-.open-x:hover { background: var(--fill); color: var(--ink); }
+.wel-hero { animation: open-rise .32s var(--ease-out) both; }
+.wel-hero h1 { margin: 0; font: 700 clamp(30px, 6vw, 44px)/1.08 var(--display); letter-spacing: -.03em; color: var(--bink); text-wrap: balance; }
+.wel-hero p { margin: 14px 0 0; max-width: 52ch; font-size: 15.5px; line-height: 1.55; color: var(--mut); text-wrap: pretty; }
 
-.open-choose { width: 100%; height: 46px; border: 0; border-radius: 12px; background: var(--accent); color: var(--on-accent); font: 600 14px var(--sans); display: flex; align-items: center; justify-content: center; gap: 9px; cursor: pointer; transition: background-color .15s ease, transform .12s var(--ease-out); }
-.open-choose:hover { background: var(--accent-ink); }
+.wel-open { padding: 16px; border-radius: 20px; border: 1px solid var(--bline); background: var(--panel); box-shadow: var(--shadow-float); animation: open-rise .32s .05s var(--ease-out) both; }
+.wel-safe { margin: 12px 0 0 2px; display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--ink-3); }
+
+/* The whole card is the drop zone: while a folder is dragged over the page its border turns dashed accent. */
+.wel-open { transition: border-color .15s, background-color .15s, box-shadow .15s; }
+.wel-open.on { border: 1.5px dashed var(--accent); background: color-mix(in srgb, var(--accent-soft) 60%, var(--panel)); box-shadow: 0 0 0 5px var(--accent-soft), var(--shadow-float); }
+.wel-drop { display: flex; align-items: center; gap: 14px; }
+.wel-drop-i { flex: none; width: 46px; height: 46px; border-radius: 13px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); transition: transform .2s var(--ease-out), background-color .15s, color .15s; }
+.wel-open.on .wel-drop-i { transform: translateY(-2px) scale(1.06); background: var(--accent); color: var(--on-accent); }
+.wel-drop-t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.wel-drop-t b { font-size: 15px; font-weight: 650; color: var(--bink); letter-spacing: -.01em; }
+.wel-drop-t span { font-size: 12.5px; color: var(--mut); }
+.bd-home .wel-drop .open-choose { flex: none; width: auto; height: 40px; padding: 0 16px; font-size: 14px; }
+.bd-home .wel-open.on .open-choose { opacity: .4; pointer-events: none; }
+@media (max-width: 480px) { .wel-drop { flex-wrap: wrap; } .bd-home .wel-drop .open-choose { width: 100%; } }
+
+.wel-choices { margin-top: 12px; display: flex; flex-direction: column; gap: 4px; }
+.wel-choices p { margin: 0 0 4px 2px; font-size: 13px; color: var(--mut); }
+.bd-home .wel-choice { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border: 1px solid var(--bline); border-radius: 10px; background: none; color: var(--ink-3); text-align: left; cursor: pointer; transition: border-color .15s, background-color .15s; }
+.wel-choice span { flex: 1; min-width: 0; font: 12.5px var(--mono); color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wel-choice:hover, .wel-choice:focus-visible { background: var(--fill); border-color: color-mix(in srgb, var(--acc) 45%, var(--bline)); outline: none; }
+
+.bd-home .open-choose { width: 100%; height: 48px; border: 0; border-radius: 12px; background: var(--accent); color: var(--on-accent); font: 600 14.5px var(--sans); display: flex; align-items: center; justify-content: center; gap: 9px; cursor: pointer; transition: background-color .15s ease, transform .12s var(--ease-out); }
+.open-choose:hover { background: color-mix(in srgb, var(--accent) 88%, black); }
 .open-choose:active { transform: scale(.98); }
 .open-choose:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 
 /* One field with its own submit, so "Open" never floats beside it looking disabled. */
-.open-path { position: relative; margin-top: 10px; }
+.open-path { position: relative; margin-top: 14px; }
 .open-path input { width: 100%; height: 42px; padding: 0 46px 0 14px; border-radius: 12px; border: 1px solid var(--line-2); background: var(--paper); color: var(--ink); font: 13px var(--mono); outline: none; transition: border-color .15s, box-shadow .15s; }
 .open-path input::placeholder { font-family: var(--sans); font-size: 13.5px; color: var(--ink-3); }
 .open-path input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-.open-path button { position: absolute; right: 6px; top: 6px; width: 30px; height: 30px; border: 0; border-radius: 9px; display: grid; place-items: center; background: var(--accent); color: var(--on-accent); cursor: pointer; transition: opacity .15s, transform .12s var(--ease-out); }
+.bd-home .open-path button { position: absolute; right: 6px; top: 6px; width: 30px; height: 30px; border: 0; border-radius: 9px; display: grid; place-items: center; background: var(--accent); color: var(--on-accent); cursor: pointer; transition: opacity .15s, transform .12s var(--ease-out); }
 .open-path button svg { transform: rotate(90deg); }
 .open-path button:disabled { opacity: 0; pointer-events: none; transform: scale(.8); }
 .open-path button:active { transform: scale(.92); }
 
 .open-error { margin: 10px 0 0; padding: 8px 10px; border-radius: 10px; background: var(--brick-soft); color: var(--brick); font-size: 12.5px; }
 
-.open-recent { margin-top: 20px; }
-.open-label { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 6px 2px; }
-.open-item { width: 100%; border: 0; background: none; text-align: left; padding: 8px 10px 8px 8px; border-radius: 12px; cursor: pointer; display: flex; align-items: center; gap: 12px; color: var(--ink-3); transition: background-color .15s ease; }
-.open-item:hover, .open-item:focus-visible { background: var(--fill); outline: none; }
-.open-item > svg { flex: none; opacity: 0; transition: opacity .15s, transform .15s var(--ease-out); }
-.open-item:hover > svg, .open-item:focus-visible > svg { opacity: 1; transform: translateX(2px); }
-.open-ava { flex: none; width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: var(--fill); border: 1px solid var(--line-2); color: var(--ink-2); font: 700 14px var(--display); }
-.open-item-t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-.open-item-t b { font-size: 14px; font-weight: 600; color: var(--ink); }
-.open-item-t span { font: 11.5px var(--mono); color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.open-item em { flex: none; font-style: normal; font-size: 11.5px; font-weight: 600; padding: 2px 8px; border-radius: 99px; background: var(--accent-soft); color: var(--accent); }
-.open-item.here .open-ava { background: var(--accent-soft); border-color: transparent; color: var(--accent); }
-
-.open-busy { display: flex; align-items: center; gap: 12px; padding: 14px 4px 6px; }
+.open-busy { display: flex; align-items: center; gap: 12px; padding: 6px 4px; }
 .open-busy div { display: flex; flex-direction: column; gap: 2px; }
 .open-busy b { font-size: 13.5px; color: var(--ink); }
 .open-busy span { font-size: 12px; color: var(--ink-2); }
+
+/* Recent projects: cards in a grid, the last-open one tinted. */
+.wel-recent { animation: open-rise .32s .1s var(--ease-out) both; }
+.open-label { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 10px 2px; }
+.wel-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+.bd-home .wel-proj { min-width: 0; border: 1px solid var(--bline); background: var(--panel); border-radius: 14px; padding: 12px; text-align: left; cursor: pointer; display: flex; align-items: center; gap: 12px; color: var(--ink-3); box-shadow: var(--bshadow); transition: border-color .15s, transform .12s var(--ease-out); }
+@media (hover: hover) and (pointer: fine) { .wel-proj:hover { border-color: color-mix(in srgb, var(--acc) 45%, var(--bline)); } }
+.wel-proj:active { transform: scale(.985); }
+.wel-proj:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.wel-proj:disabled { opacity: .55; cursor: default; }
+.wel-folder { flex: none; width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center; background: color-mix(in srgb, var(--amber) 14%, transparent); color: var(--amber); }
+.wel-folder svg { fill-opacity: .25; }
+.wel-proj.here .wel-folder { background: var(--accent-soft); color: var(--accent); }
+.open-item-t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.open-item-t b { font-size: 14px; font-weight: 600; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.open-item-t span { font: 11.5px var(--mono); color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wel-when { flex: none; align-self: flex-start; font-size: 11.5px; color: var(--ink-3); }
+.wel-when em { font-style: normal; font-weight: 600; padding: 2px 8px; border-radius: 99px; background: var(--accent-soft); color: var(--accent); }
+
+/* First run: what Docent will do, in three steps. */
+.wel-steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; animation: open-rise .32s .1s var(--ease-out) both; }
+.wel-step { padding: 14px; border-radius: 14px; border: 1px solid var(--bline); background: color-mix(in srgb, var(--panel) 70%, transparent); display: flex; flex-direction: column; gap: 6px; font-size: 13px; line-height: 1.45; color: var(--mut); }
+.wel-step b { display: flex; align-items: center; gap: 6px; font-size: 14px; color: var(--bink); }
+.wel-step-i { width: 32px; height: 32px; margin-bottom: 4px; border-radius: 10px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); }
+.wel-step-n { font: 600 11.5px var(--mono); color: var(--ink-3); }
+@media (max-width: 600px) { .wel-steps { grid-template-columns: 1fr; } .wel-body { padding-top: 3vh; } }
+
+/* The project switcher in the top bar. */
+.pm { position: relative; min-width: 0; display: flex; }
+.pm-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pm-pop { position: absolute; top: calc(100% + 8px); left: 0; z-index: 20; width: min(340px, calc(100vw - 32px)); max-height: min(70vh, 520px); overflow-y: auto; padding: 6px; border-radius: 16px; border: 1px solid var(--bline); background: var(--panel); box-shadow: var(--shadow-float); transform-origin: top left; animation: pm-in .16s var(--ease-out); }
+@keyframes pm-in { from { opacity: 0; transform: translateY(-4px) scale(.97); } }
+.pm-label { padding: 8px 10px 4px; font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); }
+.bd-home .pm-item { width: 100%; display: flex; align-items: center; gap: 10px; padding: 7px 8px; border: 0; border-radius: 10px; background: none; color: var(--ink-3); text-align: left; font: 500 13.5px var(--sans); cursor: pointer; transition: background-color .12s; }
+.pm-item:hover:not(:disabled), .pm-item:focus-visible { background: var(--fill); outline: none; }
+.pm-item:disabled { opacity: .5; cursor: default; }
+.pm-item > svg:last-child:not(:first-child) { flex: none; opacity: 0; transition: opacity .12s, transform .12s var(--ease-out); }
+.pm-item:hover > svg:last-child, .pm-item:focus-visible > svg:last-child { opacity: 1; transform: translateX(2px); }
+.pm-item.here > svg:last-child { opacity: 1; transform: none; color: var(--accent); }
+.pm-folder { flex: none; width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; background: color-mix(in srgb, var(--amber) 14%, transparent); color: var(--amber); }
+.pm-folder svg { fill-opacity: .25; }
+.pm-item.here .pm-folder { background: var(--accent-soft); color: var(--accent); }
+.pm-t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.pm-t b { font-size: 13.5px; font-weight: 600; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pm-t span { font: 11px var(--mono); color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pm-sep { height: 1px; margin: 6px 4px; background: var(--bline); }
+.bd-home .pm-action { color: var(--ink); padding: 9px 10px; }
+.pm-action > svg { color: var(--ink-3); }
+.pm-spin { width: 14px; height: 14px; }
+.pm-err { margin: 6px 4px 2px; }
+@media (prefers-reduced-motion: reduce) { .pm-pop { animation: none; } }
+
+/* Before the workspace loads, and when the server can't be reached. */
+.boot { position: fixed; inset: 0; display: grid; place-items: center; padding: 16px; }
+.boot-wait { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--ink-3); animation: open-fade .2s .4s both; }
+.boot-card { width: min(420px, 100%); padding: 22px; border-radius: 20px; border: 1px solid var(--bline); background: var(--panel); box-shadow: var(--shadow-float); animation: open-rise .26s var(--ease-out) both; }
+.boot-card h1 { margin: 14px 0 6px; font: 700 18px/1.25 var(--display); letter-spacing: -.02em; color: var(--bink); }
+.boot-card p { margin: 0 0 6px; font-size: 13.5px; line-height: 1.5; color: var(--mut); }
+.boot-card code { font: 12.5px var(--mono); padding: 1px 6px; border-radius: 6px; background: var(--fill); color: var(--ink); }
+.boot-err { font: 11.5px var(--mono) !important; color: var(--ink-3) !important; word-break: break-word; }
+.boot-card .open-choose { margin-top: 14px; }
+
 .spinner { width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--accent-soft); border-top-color: var(--accent); animation: open-spin .8s linear infinite; flex: none; }
 @keyframes open-spin { to { transform: rotate(360deg); } }
 @keyframes open-fade { from { opacity: 0; } }
 @keyframes open-rise { from { opacity: 0; transform: translateY(6px) scale(.98); } }
-@media (prefers-reduced-motion: reduce) { .open-repo.over, .open-card { animation: none; } .spinner { animation-duration: 2.4s; } }
+@media (prefers-reduced-motion: reduce) { .wel-hero, .wel-open, .wel-recent, .wel-steps, .boot-card { animation: none; } .spinner { animation-duration: 2.4s; } }

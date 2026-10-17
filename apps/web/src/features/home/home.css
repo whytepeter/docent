@@ -12,7 +12,21 @@
 /* The icon carries its weight up top and the wordmark is lowercase, so optical centre sits a little lower. */
 .bd-home-brand .logo { display: block; flex: none; transform: translateY(1.5px); }
 .bd-home-bar .bd-home-repo { padding: 0 10px 0 14px; font: 600 14px var(--ui); color: var(--bink); cursor: pointer; transition: border-color .15s, color .15s; }
-.bd-home-repo svg { transform: rotate(90deg); color: var(--mut); }
+.bd-home-repo > svg:last-child { transform: rotate(90deg); color: var(--mut); }
+/* The brand pill is the way back to every project: a muted arrow says so, and it warms on hover. */
+.bd-home-bar .bd-home-back { color: var(--bink); cursor: pointer; padding-left: 8px !important; transition: border-color .15s, color .15s, transform .12s var(--ease-out); }
+.bd-home-back-i { display: grid; place-items: center; width: 22px; height: 22px; margin-right: -2px; border-radius: 7px; color: var(--mut); transition: background-color .15s, color .15s, transform .15s var(--ease-out); }
+@media (hover: hover) and (pointer: fine) {
+  .bd-home-bar .bd-home-back:hover { border-color: color-mix(in srgb, var(--acc) 45%, var(--bline)); }
+  .bd-home-back:hover .bd-home-back-i { background: var(--accsoft); color: var(--acc); transform: translateX(-1px); }
+}
+.bd-home-back:active { transform: scale(.97); }
+.bd-home-slash { color: var(--bline); font: 300 22px var(--ui); margin: 0 -2px; user-select: none; }
+.bd-home-bar .bd-home-repo { gap: 7px; padding-left: 12px; max-width: min(320px, 52vw); }
+.bd-home-repo > svg:first-child { flex: none; transform: none; color: var(--amber); }
+.bd-home-repo[aria-expanded="true"] { border-color: var(--acc); }
+.bd-home-repo[aria-expanded="true"] > svg:last-child { transform: rotate(-90deg); }
+.bd-home-repo > svg:last-child { flex: none; transition: transform .18s var(--ease-out); }
 .bd-home-bar .bd-home-gear { margin-left: auto; width: 40px; justify-content: center; color: var(--mut); cursor: pointer; transition: border-color .15s, color .15s, transform .12s var(--ease-out); }
 @media (hover: hover) and (pointer: fine) { .bd-home-bar .bd-home-repo:hover, .bd-home-bar .bd-home-gear:hover { color: var(--bink); border-color: color-mix(in srgb, var(--acc) 45%, var(--bline)); } }
 .bd-home-gear:active { transform: scale(.94); }

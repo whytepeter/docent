@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import type { FlowsState, Job, ProjectOverview } from "@docent/contracts";
 import { api } from "../../shared/api/client.ts";
 import { Icon, Logo, ThemeButton } from "../../shared/ui/index.ts";
@@ -13,7 +13,7 @@ const running = (j: Job | null | undefined): j is Job => !!j && !j.finishedAt;
  * The start: what the project does, then the flows worth a whiteboard. Both are written the first time a
  * repo opens (about a minute, no button) and cached after; a board not drawn yet is drawn when opened.
  */
-export function Home({ repoName, onOpen, onSwitch, onSettings }: { repoName: string; onOpen: (id: string) => void; onSwitch: () => void; onSettings: () => void }) {
+export function Home({ repoName, switcher, onOpen, onBack, onSettings }: { repoName: string; switcher: ReactNode; onOpen: (id: string) => void; onBack: () => void; onSettings: () => void }) {
   const [state, setState] = useState<FlowsState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tries, setTries] = useState(0);
@@ -55,18 +55,21 @@ export function Home({ repoName, onOpen, onSwitch, onSettings }: { repoName: str
   return (
     <div className="bd-home">
       <div className="bd-home-bar">
-        <span className="bd-home-brand" aria-label="docent"><Logo size={16} /><span className="bd-home-word">docent</span></span>
-        <button className="bd-home-repo" onClick={onSwitch} title="Open another codebase">
-          {repoName}<Icon name="chevron" size={13} weight="bold" />
+        <button className="bd-home-brand bd-home-back" onClick={onBack} title="All projects" aria-label="Back to all projects">
+          <span className="bd-home-back-i" aria-hidden="true"><Icon name="back" size={16} /></span>
+          <Logo size={16} /><span className="bd-home-word">docent</span>
         </button>
+        <span className="bd-home-slash" aria-hidden="true">/</span>
+        {switcher}
         <ThemeButton className="bd-home-gear bd-home-theme" />
         <button className="bd-home-gear" onClick={onSettings} aria-label="Settings" title="Settings: voice, keys"><Icon name="settings" size={18} /></button>
       </div>
       <main className="bd-home-main">
         {error && <p className="bd-home-err">{error}</p>}
+        {/* Nothing until the first answer (a few ms locally): a placeholder would only flash and jump. */}
         {state && <Overview name={repoName} overview={state.overview} job={state.overviewJob} now={now} onRetry={() => retry(api.writeOverview)} />}
 
-        <section className="bd-home-flows" aria-labelledby="bd-flows-h">
+        {state && <section className="bd-home-flows" aria-labelledby="bd-flows-h">
           <h2 id="bd-flows-h">What do you want to understand?</h2>
           <p className="bd-home-sub">Pick a flow. Docent draws it on a whiteboard from the real code: follow one request through it, break it on purpose, then defend how it's built.</p>
           {failed && (
@@ -99,7 +102,7 @@ export function Home({ repoName, onOpen, onSwitch, onSettings }: { repoName: str
               </button>
             ))}
           </div>
-        </section>
+        </section>}
       </main>
     </div>
   );

@@ -38,6 +38,7 @@ export const api = {
   ask,
   workspace: () => request<Workspace>("/api/workspace"),
   openRepo: (path: string) => request<Workspace>("/api/workspace/open", json({ path })),
+  findDropped: (name: string, children: string[]) => request<{ paths: string[] }>("/api/workspace/find", json({ name, children })),
   pickFolder: () => request<{ path: string | null }>("/api/workspace/pick", { method: "POST" }),
   source: (path: string, from?: number, to?: number) =>
     request<SourceSlice>(`/api/source?path=${q(path)}${from ? `&from=${from}` : ""}${to ? `&to=${to}` : ""}`),
