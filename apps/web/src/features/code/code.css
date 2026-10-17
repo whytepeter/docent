@@ -21,3 +21,17 @@
 .sheet h3 span { font: 400 12px var(--sans); color: var(--ink-2); }
 .sheet .path { font: 11px var(--mono); color: var(--ink-3); overflow-wrap: anywhere; }
 .sheet-body { overflow: auto; flex: 1; background: var(--paper); }
+
+/* The code sheet is always dark, like the code on the board's cards, in either theme. */
+.sheet { --sheet-bg: #14171F; --sheet-ink: #D8DEEA; --sheet-mut: #6D7890; --sheet-line: #262B38; --sheet-hot: #262F52;
+  background: var(--sheet-bg); color: var(--sheet-ink); border-color: var(--sheet-line); color-scheme: dark; }
+.sheet header { border-bottom-color: var(--sheet-line); }
+.sheet h3 { color: var(--sheet-ink); }
+.sheet h3 span { color: var(--sheet-mut); }
+.sheet .path { color: var(--sheet-mut); }
+.sheet button { color: var(--sheet-mut); }
+.sheet button:hover { color: var(--sheet-ink); background: rgba(255, 255, 255, .06); }
+.sheet .sheet-body { background: var(--sheet-bg); }
+.sheet .code .shiki, .sheet .code .shiki span { color: var(--shiki-dark) !important; }
+.sheet .code .line::before { color: var(--sheet-mut); opacity: 1; }
+.sheet .code .line.on { background: var(--sheet-hot); box-shadow: inset 3px 0 0 var(--accent); }

@@ -37,7 +37,7 @@
 .bd-edgelab { font: 600 16px var(--hand); fill: var(--mut); }
 
 /* cards */
-.bd-card { position: absolute; background: var(--panel); border: 2px solid var(--bline); border-radius: 22px; box-shadow: var(--bshadow); overflow: hidden; transition: border-color .25s, box-shadow .25s; }
+.bd-card { position: absolute; background: var(--panel); border: 2px solid var(--bline); border-radius: 22px; box-shadow: var(--bshadow); overflow: hidden; transition: border-color .25s, box-shadow .25s, opacity .3s; }
 /* An open card grows over the cards below it; it, and above all the one being talked about, stays on top. */
 .bd-card.open { z-index: 2; }
 .bd-card.act { z-index: 3; border-color: var(--acc); box-shadow: 0 0 0 5px var(--accsoft), var(--bshadow); }
@@ -275,12 +275,16 @@
 @media (prefers-reduced-motion: reduce) { .bd-ln.pt { animation: none; background-size: 100% 100%; } }
 .bd-card.hold-notes .bd-notes { display: none; }
 
-/* Drawn as the tour reaches it: a card the story hasn't got to isn't on the board yet. */
-.bd-card.undrawn, .bd-edge.undrawn, .bd-edgelab.undrawn { visibility: hidden; }
+/* Drawn as the tour reaches it: the whole board is in view from the start, and what the story hasn't
+   reached yet is faded; a card comes to full strength (and its arrow draws in) when the tour gets there. */
+.bd-card.ahead { opacity: .62; }
+.bd-edge.ahead { opacity: .3; }
+.bd-edgelab.ahead { opacity: .5; }
 .bd-card.drawing-in { animation: bd-draw-card var(--draw-ms, .65s) var(--ease-out) both; }
 @keyframes bd-draw-card {
-  from { clip-path: inset(0 100% 0 0 round 22px); opacity: .5; }
-  to { clip-path: inset(0 0 0 0 round 22px); opacity: 1; }
+  from { opacity: .62; transform: scale(.985); }
+  60% { transform: scale(1.012); }
+  to { opacity: 1; transform: none; }
 }
 
 /* Why? on the sentence on screen: the tour waits while Docent answers, then picks up the step again. */
@@ -288,7 +292,7 @@
 .bd-cap-head small { flex: 1; min-width: 0; }
 .bd-fl .bd-why { flex: none; height: 24px !important; min-width: 0 !important; padding: 0 10px !important; border-radius: 99px !important; background: var(--accsoft) !important; color: var(--acc) !important; font: 650 12px var(--ui); }
 .bd-fl .bd-why:hover { filter: brightness(.97); }
-.bd-chat-back { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; height: 30px; padding: 0 12px; border: 0; border-radius: 99px; background: var(--acc); color: var(--acc-ink); font: 650 12.5px var(--ui); cursor: pointer; }
+.bd-chat-back { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; height: 30px; padding: 0 12px; border: 0; border-radius: 99px; background: var(--acc); color: #fff; font: 650 12.5px var(--ui); cursor: pointer; }
 
 /* The example request's values, written beside the lines they pass through, like a note on the whiteboard. */
 .bd-ln { position: relative; }

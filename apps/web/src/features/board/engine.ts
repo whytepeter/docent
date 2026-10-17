@@ -108,9 +108,9 @@ export class BoardEngine {
   /** The card whose code is typing right now; opening all code leaves it to finish. */
   private typingId: string | null = null;
   private s: EngineState;
-  /** The step at which the tour first reaches each card: it's drawn on the board from then on. */
+  /** The step at which the tour first reaches each card: faded before it, full strength from then on. */
   private reach = new Map<string, number>();
-  /** Cards drawn on the board right now, and the step they were drawn up to. */
+  /** Cards the tour has reached so far, and the step they were drawn up to. */
   private drawn = new Set<string>();
   private drawnStep = -1;
   private frame1 = { x: 0, y: 0, w: 0, h: 0 };
@@ -315,8 +315,8 @@ export class BoardEngine {
     this.mkFrame(this.frame1, b.title);
 
     this.reach = reachOf(b);
-    for (const c of this.cards.values()) c.root.classList.add("undrawn");
-    for (const e of this.edges.values()) (e.path.classList.add("undrawn"), e.label.classList.add("undrawn"));
+    for (const c of this.cards.values()) c.root.classList.add("ahead");
+    for (const e of this.edges.values()) (e.path.classList.add("ahead"), e.label.classList.add("ahead"));
     for (const n of this.o.saved.notes ?? []) this.sticky({ x: n.x, y: n.y, text: n.text, c: n.color, r: n.r, mine: true, id: n.id });
   }
 
@@ -727,7 +727,8 @@ export class BoardEngine {
   /**
    * The board as it should look at step `i`: every card the tour has reached by then, and the arrows between
    * them. Moving on by one step draws what's new, an arrow into a card and then the card, the way you'd draw
-   * on a whiteboard; a jump (or reduced motion) just shows the result. Cards not reached yet aren't there.
+   * on a whiteboard; a jump (or reduced motion) just shows the result. The whole board is always in view: cards not reached
+   * yet stay faded, so you can see where the story is heading.
    */
   private async drawUpTo(i: number, tok: number): Promise<void> {
     const animate = i === this.drawnStep + 1 && !rm();
@@ -750,7 +751,7 @@ export class BoardEngine {
     const c = this.cards.get(id);
     if (!c) return Promise.resolve();
     this.drawn.add(id);
-    c.root.classList.remove("undrawn");
+    c.root.classList.remove("ahead");
     if (!ms) return Promise.resolve();
     c.root.style.setProperty("--draw-ms", `${ms}ms`);
     c.root.classList.add("drawing-in");
@@ -761,14 +762,14 @@ export class BoardEngine {
     if (!c) return;
     this.drawn.delete(id);
     this.closeCard(id);
-    c.root.classList.add("undrawn");
-    for (const e of this.edges.values()) if (e.from === id || e.to === id) (e.path.classList.add("undrawn"), e.label.classList.add("undrawn"));
+    c.root.classList.add("ahead");
+    for (const e of this.edges.values()) if (e.from === id || e.to === id) (e.path.classList.add("ahead"), e.label.classList.add("ahead"));
   }
   /** An arrow drawn along its length as a solid stroke, settling back to the board's dashed line. */
   private drawEdge(e: { path: SVGPathElement; label: SVGTextElement }, ms: number): Promise<void> {
-    if (!e.path.classList.contains("undrawn")) return Promise.resolve();
-    e.path.classList.remove("undrawn");
-    e.label.classList.remove("undrawn");
+    if (!e.path.classList.contains("ahead")) return Promise.resolve();
+    e.path.classList.remove("ahead");
+    e.label.classList.remove("ahead");
     if (!ms) return Promise.resolve();
     const len = e.path.getTotalLength();
     const dash = `${len} ${len}`;
@@ -872,8 +873,6 @@ export class BoardEngine {
         card.root.classList.remove("hold-notes");
         await this.typeNotes(card, tok);
       }
-      // The card's notes ("Why", "Say it") get time to be read before the tour moves on.
-      if (this.s.playing) await this.sleep(this.readTime(`${card.data.why.text} ${card.data.say.text}`), tok);
     }
     if (tok !== this.tok) return;
     this.set({ beat: null });
@@ -883,11 +882,6 @@ export class BoardEngine {
       if (i < this.board.steps.length - 1) void this.runStep(i + 1, true);
       else this.set({ playing: false });
     }
-  }
-
-  /** How long reading this takes at the chosen speed: a steady pace with a moment to take it in. */
-  private readTime(text: string) {
-    return (1200 + text.split(/\s+/).length * 230) / this.o.rate();
   }
 
   /** What the caption calls a step: where it sits in the tour, and its card. */
@@ -977,7 +971,7 @@ export class BoardEngine {
     }
     const ids = [...new Set([...hits.keys(), ...cardIds])].filter((id) => this.cards.has(id));
     if (!ids.length) return false;
-    // An answer can point past where the tour has got to: draw what it cites.
+    // An answer can point past where the tour has got to: bring what it cites to full strength.
     for (const id of ids) void this.drawCard(id, 0);
     for (const e of this.edges.values()) if (this.drawn.has(e.from) && this.drawn.has(e.to)) void this.drawEdge(e, 0);
     for (const id of ids) this.cards.get(id)!.root.classList.add("act");

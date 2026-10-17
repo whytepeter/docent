@@ -42,7 +42,7 @@ export async function answerQuestion(
   facts: Facts,
   root: string,
   input: AskInput,
-  { signal, onStage }: { signal?: AbortSignal; onStage?: (stage: "answering" | "checking") => void } = {},
+  { signal, onStage, onDraft }: { signal?: AbortSignal; onStage?: (stage: "answering" | "checking") => void; onDraft?: (a: CheckedAnswer) => void } = {},
 ): Promise<CheckedAnswer> {
   const ref = new Map(input.boxes.map((b, i) => [`b${i + 1}`, b.id]));
   const refOf = new Map(input.boxes.map((b, i) => [b.id, `b${i + 1}`]));
@@ -66,8 +66,6 @@ export async function answerQuestion(
     summary: "", analogy: "", status: "unknown", statusReason: "", flow: [], issues: [],
     claims: result.data.paragraphs.map((p) => ({ ...p, kind: "behavior" as const })),
   });
-  const paragraphs = await refuteClaims(llm, facts, root, checked.claims, signal);
-
   // Only boxes and links that are really on screen survive; a step left with nothing to show is dropped.
   const real = new Set(input.links.map((l) => `${l.from}>${l.to}`));
   const scene = result.data.scene.map((s) => {
@@ -84,5 +82,8 @@ export async function answerQuestion(
     return { nodes, edges, caption: s.caption };
   }).filter((s) => s.nodes.length || s.edges.length);
 
+  // The citation check is instant: the answer can be read now, while the second reader settles its labels.
+  onDraft?.({ paragraphs: checked.claims, scene, model: result.model });
+  const paragraphs = await refuteClaims(llm, facts, root, checked.claims, signal);
   return { paragraphs, scene, model: result.model };
 }

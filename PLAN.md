@@ -228,12 +228,13 @@ The map-and-inspector screens gave way to one idea: pick a flow of the codebase,
 - Try it's failure scenarios and Defend it's questions became tour steps; boards written before this are upgraded on load, keeping their checked claims.
 
 **The tour, improved (Oct 17):**
-- **Drawn as it goes.** The board starts empty under its title note. Each step first draws the arrow the request travels along, then wipes in the card it reaches, then sends the packet in. Jumping shows the board as it is at that step at once; going back takes away what the story hasn't reached.
+- **Drawn as it goes.** The whole board is in view from the start (an empty start was tried and rejected); cards the story hasn't reached are faded. Each step draws the arrow the request travels along, brings the card it reaches to full strength, then sends the packet in. Jumping shows the board as it is at that step at once.
 - **The example's values on the code.** Point and reveal beats can write what the intro's example request holds at a line ("file.size = 3 MB → passes") beside it, so a step reads as a trace of one real request.
 - **Why?** beside the caption pauses the tour and asks Docent about the sentence on screen; the answer is checked and pointed at on the board, and "Back to the tour" restarts the step, playing on if it was.
 - **Narration per beat** with a real voice (Cartesia): words appear on the audio's clock, the next beat's clip is fetched ahead, and a question gets a short pause before its answer.
 - **Progress** is kept per tour in the browser: the board opens where you stopped, and home says "stopped at step 4 of 14" or "watched".
-- While playing, a card's "Why" and "Say it" notes are given time to be read; the open card sits above the cards it grows over.
+- **Chat answers show sooner and type in.** After the instant citation check the answer is sent as a draft and types in paragraph by paragraph; its labels read "checking" until the second reader settles them in place (about 20 s later), and the board points at the cited lines as soon as the draft lands. Nothing is shown before its citations are checked.
+- No reading holds between cards (tried and rejected: the learner pauses when they want to read). The open card sits above the cards it grows over. The code sheet is always dark, like the code on the cards.
 
 **Backlog:** a stop button on the board's own drawing screen; chat answers kept across reloads.
 

@@ -42,6 +42,8 @@ export async function askQuestion(route: Route, question: string, view: { boxes:
   try {
     await api.ask({ route, question, boxes, links, history }, (e) => {
       if (e.type === "stage") turn.stage = e.stage;
+      // The draft is readable at once; its labels say "checking" until the final answer settles them.
+      else if (e.type === "draft") turn.answer = e.answer;
       else if (e.type === "answer") Object.assign(turn, { stage: "done", answer: e.answer });
       else Object.assign(turn, { stage: "error", error: e.error });
       bump();

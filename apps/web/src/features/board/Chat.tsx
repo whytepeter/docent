@@ -5,6 +5,49 @@ import { askQuestion, routeKey, stopAsking, useThread, type Turn } from "../ask/
 import type { BoardEngine, EngineState } from "./engine.ts";
 import { Said } from "./Said.tsx";
 
+/** Answers already typed in, so reopening the chat or a label settling never types them again. */
+const typed = new WeakSet<Turn>();
+const CHARS_PER_SECOND = 170;
+
+/**
+ * An answer typing in, paragraph by paragraph. Each paragraph's label and lines appear when it's done,
+ * and what follows the answer (Show me) once all of it is. Reduced motion shows it at once.
+ */
+function TypedAnswer({ turn, checking, onGrow, children }: { turn: Turn; checking: boolean; onGrow: () => void; children: React.ReactNode }) {
+  const paragraphs = turn.answer!.paragraphs;
+  const total = paragraphs.reduce((n, p) => n + p.text.length, 0);
+  const [shown, setShown] = useState(() => (typed.has(turn) || matchMedia("(prefers-reduced-motion: reduce)").matches ? Infinity : 0));
+  const grow = useRef(onGrow);
+  grow.current = onGrow;
+  useEffect(() => {
+    if (typed.has(turn)) return;
+    let raf = 0;
+    const t0 = performance.now();
+    const tick = (now: number) => {
+      const n = Math.floor(((now - t0) * CHARS_PER_SECOND) / 1000);
+      setShown(n);
+      grow.current();
+      if (n < total) raf = requestAnimationFrame(tick);
+      else typed.add(turn);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+    // Typed once per turn; the final answer keeps the draft's words, so a label settling doesn't restart it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [turn]);
+  let left = shown;
+  return (
+    <div className="bd-chat-a">
+      {paragraphs.map((p, j) => {
+        const n = Math.min(p.text.length, Math.max(0, left));
+        left -= p.text.length;
+        return n > 0 || j === 0 ? <Said key={j} claim={p} checking={checking} typed={n} /> : null;
+      })}
+      {shown >= total && children}
+    </div>
+  );
+}
+
 const STAGE: Record<string, string> = { reading: "Reading the board", answering: "Reading the code", checking: "Checking every claim" };
 
 /** What an answer cites, for the board to point at. */
@@ -33,14 +76,20 @@ export function Chat({ board, es, engine, onClose, ask, backToTour }: { board: B
   // The thread updates its turns in place, so watch the last turn's stage, not the array.
   const last = turns[turns.length - 1];
   const lastStage = last?.stage;
-  // When an answer lands, the board shows where it lives.
+  // As soon as an answer can be read (its draft, before the second reader), the board shows where it lives.
+  const hasAnswer = !!last?.answer;
   useEffect(() => {
-    if (last?.stage === "done" && pointed.current !== turns.length) {
+    if (hasAnswer && last && pointed.current !== turns.length) {
       pointed.current = turns.length;
       const p = pointOf(last);
       if (p) engine.pointAt(p.cards, p.evidence);
     }
-  }, [lastStage, turns.length, last, engine]);
+  }, [hasAnswer, turns.length, last, engine]);
+  // While an answer types in, keep the newest words in view, unless you've scrolled up to reread.
+  const follow = () => {
+    const l = list.current;
+    if (l && l.scrollHeight - l.scrollTop - l.clientHeight < 140) l.scrollTop = l.scrollHeight;
+  };
   useEffect(() => {
     list.current?.scrollTo({ top: list.current.scrollHeight, behavior: "smooth" });
   }, [lastStage, turns.length]);
@@ -97,14 +146,13 @@ export function Chat({ board, es, engine, onClose, ask, backToTour }: { board: B
             {t.stage === "error" ? (
               <p className="bd-chat-err">{t.error}</p>
             ) : t.answer ? (
-              <div className="bd-chat-a">
-                {t.answer.paragraphs.map((p, j) => <Said key={j} claim={p} checking={checking(t)} />)}
+              <TypedAnswer turn={t} checking={checking(t)} onGrow={follow}>
                 {pointOf(t)?.evidence.length || pointOf(t)?.cards.length ? (
                   <button className="bd-chat-show" onClick={() => { const p = pointOf(t); if (p) engine.pointAt(p.cards, p.evidence); }}>
                     <Icon name="fit" size={13} />Show me on the board
                   </button>
                 ) : null}
-              </div>
+              </TypedAnswer>
             ) : (
               <p className="bd-chat-wait" role="status"><span className="bd-chat-dots" aria-hidden="true"><i /><i /><i /></span>{STAGE[t.stage] ?? "Working"}…</p>
             )}

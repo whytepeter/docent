@@ -221,6 +221,8 @@ export interface AskAnswer {
 /** Streamed while an answer is made: what Docent is doing, then the answer or an error. */
 export type AskEvent =
   | { type: "stage"; stage: "reading" | "answering" | "checking" }
+  /** The answer once the citation check has passed, shown while the second reader settles its labels. */
+  | { type: "draft"; answer: AskAnswer }
   | { type: "answer"; answer: AskAnswer }
   | { type: "error"; error: string };
 

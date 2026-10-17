@@ -25,7 +25,7 @@ export function askRoutes(repo: RepoService, index: () => GraphIndex): Hono {
           boxes: body.boxes.slice(0, 80),
           links: body.links.slice(0, 200),
           history: body.history ?? [],
-        }, { signal: abort.signal, onStage: (stage) => void send({ type: "stage", stage }) });
+        }, { signal: abort.signal, onStage: (stage) => void send({ type: "stage", stage }), onDraft: (answer) => void send({ type: "draft", answer }) });
         await send({ type: "answer", answer });
       } catch (e) {
         if (!abort.signal.aborted) await send({ type: "error", error: (e as Error).message });
