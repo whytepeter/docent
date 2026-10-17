@@ -1,7 +1,10 @@
 import { Hono } from "hono";
-import type { Settings, VoiceClip, VoiceOption, VoiceStatus } from "@docent/contracts";
+import type { LocalModel, Settings, VoiceClip, VoiceOption, VoiceStatus } from "@docent/contracts";
 import { pickProvider, readConfig, writeConfig } from "@docent/llm";
-import { adapterFor, clipAudio, DEFAULT_PRONUNCIATIONS, KEY_ENV, pickVoice, PROVIDERS, setVoiceSettings, speak, testKey, voiceSettings, type ProviderId } from "@docent/voice";
+import {
+  adapterFor, clipAudio, CLOUD_PROVIDERS, DEFAULT_PRONUNCIATIONS, downloadKokoro, isCloud, KEY_ENV, kokoroStatus, pickVoice, PROVIDERS,
+  removeKokoro, setupHint, setVoiceSettings, speak, testKey, voiceSettings, type CloudProviderId, type ProviderId,
+} from "@docent/voice";
 import { hint, setEnvVar } from "./env.ts";
 
 const SAMPLE = "This part is solid. This part I wouldn't trust, and here's why.";
@@ -22,7 +25,8 @@ function settings(): Settings {
       expressive: v.expressive,
       pronunciations: v.pronunciations,
       defaults: DEFAULT_PRONUNCIATIONS,
-      keys: Object.fromEntries(PROVIDERS.map((p) => [p, hint(process.env[KEY_ENV[p]])])) as Record<ProviderId, string | null>,
+      keys: Object.fromEntries(CLOUD_PROVIDERS.map((p) => [p, hint(process.env[KEY_ENV[p]])])) as Record<CloudProviderId, string | null>,
+      local: { kokoro: kokoroStatus() },
     },
     claude: { mode: readConfig().provider === "api" ? "api" : "claude-code", describe: claude, apiKey: hint(process.env.ANTHROPIC_API_KEY) },
   };
@@ -53,7 +57,7 @@ export function settingsRoutes(): Hono {
         setEnvVar("ANTHROPIC_API_KEY", key || null);
         return c.json<Settings>(settings());
       }
-      if (!isProvider(body.provider)) return c.json({ error: "Unknown provider" }, 400);
+      if (!isProvider(body.provider) || !isCloud(body.provider)) return c.json({ error: "Unknown provider" }, 400);
       if (key) {
         // A key that can list voices may still be refused for speech, so a voice key is tested by speaking.
         const voice = voiceSettings().voices[body.provider];
@@ -91,16 +95,23 @@ export function settingsRoutes(): Hono {
       const provider = c.req.query("provider");
       if (!isProvider(provider)) return c.json({ error: "Unknown provider" }, 400);
       const adapter = adapterFor(provider);
-      if (!adapter?.listVoices) return c.json({ error: "Add this provider's API key first" }, 409);
+      if (!adapter?.listVoices) return c.json({ error: `${setupHint(provider)} first` }, 409);
       return c.json<VoiceOption[]>(await adapter.listVoices({ query: c.req.query("q") ?? "" }));
     })
     .post("/settings/voices/preview", async (c) => {
       const { provider, voice } = (await c.req.json().catch(() => ({}))) as { provider?: string; voice?: string };
       if (!isProvider(provider) || !voice) return c.json({ error: "Pick a voice" }, 400);
       const adapter = adapterFor(provider);
-      if (!adapter) return c.json({ error: "Add this provider's API key first" }, 409);
+      if (!adapter) return c.json({ error: `${setupHint(provider)} first` }, 409);
       const v = voiceSettings();
       const clip = await speak(adapter, voice, SAMPLE, { speed: v.speed, ...(v.expressive ? { tone: "warm" as const } : {}) });
       return c.json<VoiceClip>({ ...clip, url: `/api/voice/${clip.hash}.wav` });
+    })
+    // Local voices: download the weights to ~/.docent/models (in the background; poll for progress), or delete them.
+    .get("/settings/models/kokoro", (c) => c.json<LocalModel>(kokoroStatus()))
+    .post("/settings/models/kokoro", (c) => c.json<LocalModel>(downloadKokoro()))
+    .delete("/settings/models/kokoro", (c) => {
+      removeKokoro();
+      return c.json<Settings>(settings());
     });
 }

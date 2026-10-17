@@ -1,4 +1,4 @@
-import type { AskEvent, AskRequest, AskedBefore, BoardState, FlowsState, Settings, VoiceClip, VoiceOption, VoiceProvider, VoiceStatus, FeaturesState, Job, SourceSlice, Workspace } from "@docent/contracts";
+import type { AskEvent, AskRequest, AskedBefore, BoardState, FlowsState, CloudVoiceProvider, LocalModel, Settings, VoiceClip, VoiceOption, VoiceProvider, VoiceStatus, FeaturesState, Job, SourceSlice, Workspace } from "@docent/contracts";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   // The server refuses state changes without this header, which other sites can't send.
@@ -53,12 +53,15 @@ export const api = {
   stopBoard: (id: string) => request<Job | null>(`/api/boards/${q(id)}/stop`, { method: "POST" }),
   boardVoice: (id: string, at: number, beat: number) => request<VoiceClip>(`/api/boards/${q(id)}/voice`, json({ at, beat })),
   settings: () => request<Settings>("/api/settings"),
-  setKey: (provider: VoiceProvider | "anthropic", key: string | null) => request<Settings>("/api/settings/keys", { ...json({ provider, key }), method: "PUT" }),
+  setKey: (provider: CloudVoiceProvider | "anthropic", key: string | null) => request<Settings>("/api/settings/keys", { ...json({ provider, key }), method: "PUT" }),
   setVoice: (patch: { provider?: VoiceProvider; voice?: string; speed?: number; expressive?: boolean; pronunciations?: Record<string, string> }) => request<Settings>("/api/settings/voice", { ...json(patch), method: "PUT" }),
   setClaude: (mode: "claude-code" | "api") => request<Settings>("/api/settings/claude", { ...json({ mode }), method: "PUT" }),
   voices: (provider: VoiceProvider, q: string) => request<VoiceOption[]>(`/api/settings/voices?provider=${provider}&q=${q ? encodeURIComponent(q) : ""}`),
   previewVoice: (provider: VoiceProvider, voice: string) => request<VoiceClip>("/api/settings/voices/preview", json({ provider, voice })),
   voice: () => request<VoiceStatus>("/api/voice"),
+  model: () => request<LocalModel>("/api/settings/models/kokoro"),
+  downloadModel: () => request<LocalModel>("/api/settings/models/kokoro", { method: "POST" }),
+  removeModel: () => request<Settings>("/api/settings/models/kokoro", { method: "DELETE" }),
   cancelJob: () => request<Job | null>("/api/features/cancel", { method: "POST" }),
   prepare: () => request<Job>("/api/features/prepare", { method: "POST" }),
   discover: () => request<Job>("/api/features/discover", { method: "POST" }),

@@ -1,0 +1,293 @@
+import { createWriteStream, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import type { Clip, SynthOptions, Tone, VoiceAdapter, VoiceInfo } from "./index.ts";
+import { estimateWords, VoiceError, wav } from "./index.ts";
+
+/**
+ * Kokoro 82M (Apache-2.0), run on this computer with onnxruntime. Nothing leaves the machine once the
+ * weights are downloaded. The "timestamped" export also returns how long each phoneme lasts, which gives
+ * real word timings. Phonemes come from espeak-ng (compiled to wasm), as in kokoro-js.
+ */
+
+const REPO = "onnx-community/Kokoro-82M-v1.0-ONNX-timestamped";
+/** Pinned, so a download today and next year fetch the same files. */
+const REVISION = "dd4401a9add81ac692d20e240d22ec9dda82cc29";
+const MODEL_FILE = "onnx/model_quantized.onnx";
+const SAMPLE_RATE = 24000;
+/** The model's context is 512 tokens, two of which are the pads at either end. */
+const MAX_TOKENS = 510;
+
+/** The English voices, with the quality grades their author gives them. */
+const VOICES: Record<string, { name: string; accent: "American" | "British"; gender: "Female" | "Male"; grade: string }> = {
+  af_heart: { name: "Heart", accent: "American", gender: "Female", grade: "A" },
+  af_bella: { name: "Bella", accent: "American", gender: "Female", grade: "A-" },
+  af_nicole: { name: "Nicole", accent: "American", gender: "Female", grade: "B-" },
+  af_aoede: { name: "Aoede", accent: "American", gender: "Female", grade: "C+" },
+  af_kore: { name: "Kore", accent: "American", gender: "Female", grade: "C+" },
+  af_sarah: { name: "Sarah", accent: "American", gender: "Female", grade: "C+" },
+  af_alloy: { name: "Alloy", accent: "American", gender: "Female", grade: "C" },
+  af_nova: { name: "Nova", accent: "American", gender: "Female", grade: "C" },
+  af_sky: { name: "Sky", accent: "American", gender: "Female", grade: "C-" },
+  af_jessica: { name: "Jessica", accent: "American", gender: "Female", grade: "D" },
+  af_river: { name: "River", accent: "American", gender: "Female", grade: "D" },
+  am_fenrir: { name: "Fenrir", accent: "American", gender: "Male", grade: "C+" },
+  am_michael: { name: "Michael", accent: "American", gender: "Male", grade: "C+" },
+  am_puck: { name: "Puck", accent: "American", gender: "Male", grade: "C+" },
+  am_echo: { name: "Echo", accent: "American", gender: "Male", grade: "D" },
+  am_eric: { name: "Eric", accent: "American", gender: "Male", grade: "D" },
+  am_liam: { name: "Liam", accent: "American", gender: "Male", grade: "D" },
+  am_onyx: { name: "Onyx", accent: "American", gender: "Male", grade: "D" },
+  am_santa: { name: "Santa", accent: "American", gender: "Male", grade: "D-" },
+  am_adam: { name: "Adam", accent: "American", gender: "Male", grade: "F+" },
+  bf_emma: { name: "Emma", accent: "British", gender: "Female", grade: "B-" },
+  bf_isabella: { name: "Isabella", accent: "British", gender: "Female", grade: "C" },
+  bf_alice: { name: "Alice", accent: "British", gender: "Female", grade: "D" },
+  bf_lily: { name: "Lily", accent: "British", gender: "Female", grade: "D" },
+  bm_fable: { name: "Fable", accent: "British", gender: "Male", grade: "C" },
+  bm_george: { name: "George", accent: "British", gender: "Male", grade: "C" },
+  bm_daniel: { name: "Daniel", accent: "British", gender: "Male", grade: "D" },
+  bm_lewis: { name: "Lewis", accent: "British", gender: "Male", grade: "D+" },
+};
+export const KOKORO_DEFAULT_VOICE = "af_heart";
+
+const FILES = ["tokenizer.json", MODEL_FILE, ...Object.keys(VOICES).map((v) => `voices/${v}.bin`)];
+/** What the download weighs: the 8-bit model, the vocabulary and 28 voices of 512 KiB each. */
+export const KOKORO_SIZE = 92_361_055 + 3_500 + Object.keys(VOICES).length * 524_288;
+
+/** Kokoro has no emotion control, so tone only nudges the pace (as Cartesia's "concerned" does). */
+const KOKORO_PACE: Record<Tone, number> = { calm: 1, warm: 1, curious: 1, concerned: 0.94, emphatic: 0.97 };
+
+// ---------------------------------------------------------------- the download
+
+export const modelDir = () => join(homedir(), ".docent", "models", "kokoro");
+const manifest = () => join(modelDir(), "manifest.json");
+
+export interface ModelStatus {
+  state: "absent" | "downloading" | "ready" | "error";
+  /** Bytes on disk so far, while downloading. */
+  received: number;
+  size: number;
+  error?: string;
+}
+
+let download: { received: number; size: number; abort: AbortController; error?: string } | null = null;
+
+/** Ready once every file is in and the manifest written last says this revision. */
+export function kokoroReady(): boolean {
+  try {
+    return (JSON.parse(readFileSync(manifest(), "utf8")) as { revision?: string }).revision === REVISION;
+  } catch {
+    return false;
+  }
+}
+
+export function kokoroStatus(): ModelStatus {
+  if (kokoroReady()) return { state: "ready", received: KOKORO_SIZE, size: KOKORO_SIZE };
+  if (!download) return { state: "absent", received: 0, size: KOKORO_SIZE };
+  if (download.error) return { state: "error", received: download.received, size: download.size, error: download.error };
+  return { state: "downloading", received: download.received, size: download.size };
+}
+
+/** Starts the download in the background (once); poll `kokoroStatus` for progress. */
+export function downloadKokoro(): ModelStatus {
+  if (kokoroReady() || (download && !download.error)) return kokoroStatus();
+  const job = { received: 0, size: KOKORO_SIZE, abort: new AbortController() } as NonNullable<typeof download>;
+  download = job;
+  void (async () => {
+    try {
+      for (const file of FILES) {
+        const to = join(modelDir(), file);
+        if (existsSync(to)) continue;
+        mkdirSync(join(to, ".."), { recursive: true });
+        const res = await fetch(`https://huggingface.co/${REPO}/resolve/${REVISION}/${file}`, { signal: job.abort.signal });
+        if (!res.ok || !res.body) throw new VoiceError(`Hugging Face answered ${res.status} for ${file}`);
+        const counted = Readable.fromWeb(res.body as import("node:stream/web").ReadableStream<Uint8Array>);
+        counted.on("data", (chunk: Buffer) => (job.received += chunk.length));
+        // Written beside the target and renamed, so a half-finished file never counts as downloaded.
+        await pipeline(counted, createWriteStream(`${to}.part`), { signal: job.abort.signal });
+        renameSync(`${to}.part`, to);
+      }
+      writeFileSync(manifest(), JSON.stringify({ repo: REPO, revision: REVISION, model: MODEL_FILE }));
+      if (download === job) download = null;
+    } catch (e) {
+      if (download === job) job.error = job.abort.signal.aborted ? "Download stopped" : `Download failed: ${(e as Error).message}`;
+    }
+  })();
+  return kokoroStatus();
+}
+
+/** Stops a download in progress and deletes the weights. Only Docent's own model folder is touched. */
+export function removeKokoro(): ModelStatus {
+  download?.abort.abort();
+  download = null;
+  session = null;
+  styles.clear();
+  rmSync(modelDir(), { recursive: true, force: true });
+  return kokoroStatus();
+}
+
+// ---------------------------------------------------------------- speaking
+
+type Ort = typeof import("onnxruntime-node");
+let session: Promise<{ ort: Ort; run: import("onnxruntime-node").InferenceSession; vocab: Map<string, number> }> | null = null;
+const styles = new Map<string, Float32Array>();
+/** One line at a time: the model already uses every core, and parallel runs only slow each other down. */
+let queue: Promise<unknown> = Promise.resolve();
+
+function load() {
+  session ??= (async () => {
+    const ort = await import("onnxruntime-node");
+    const run = await ort.InferenceSession.create(join(modelDir(), MODEL_FILE), { executionProviders: ["cpu"] });
+    const tok = JSON.parse(readFileSync(join(modelDir(), "tokenizer.json"), "utf8")) as { model: { vocab: Record<string, number> } };
+    return { ort, run, vocab: new Map(Object.entries(tok.model.vocab)) };
+  })().catch((e) => {
+    session = null;
+    throw e;
+  });
+  return session;
+}
+
+function style(voice: string): Float32Array {
+  let s = styles.get(voice);
+  if (!s) {
+    const bytes = readFileSync(join(modelDir(), "voices", `${voice}.bin`));
+    s = new Float32Array(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+    styles.set(voice, s);
+  }
+  return s;
+}
+
+/** Punctuation the model reads (as pauses and intonation); everything between is phonemized. */
+const PUNCT = /(\s*[;:,.!?¡¿—…"«»“”()]+\s*)+/g;
+
+/** espeak's output, adjusted the way kokoro-js does for Kokoro's phoneme set. */
+const tidy = (p: string) => p.replace(/ʲ/g, "j").replace(/r/g, "ɹ").replace(/x/g, "k").replace(/ɬ/g, "l");
+
+/**
+ * Text to phoneme pieces, each tagged with the word (index into the line's words) it belongs to, or -1
+ * for pauses and spaces.
+ */
+export async function phonemePieces(text: string, british: boolean): Promise<{ words: string[]; pieces: { p: string; word: number }[] }> {
+  const { phonemize } = await import("phonemizer");
+  const words: string[] = [];
+  const pieces: { p: string; word: number }[] = [];
+  const clean = text.replace(/[‘’]/g, "'").replace(/[^\S\n]+/g, " ").trim();
+  let at = 0;
+  const phrase = async (s: string) => {
+    const tw = s.trim().split(/\s+/).filter(Boolean);
+    if (!tw.length) return;
+    const first = words.length;
+    words.push(...tw);
+    const say = async (t: string) => (await phonemize(t, british ? "en" : "en-us")).join(" ").split(/\s+/).filter(Boolean).map(tidy);
+    let pw = (await say(s)).map((p) => [p]);
+    // Numbers and initials ("256", "S3") come back as several words; then each word is phonemized alone.
+    if (pw.length !== tw.length) pw = await Promise.all(tw.map(say));
+    pw.forEach((ps, i) => {
+      if (i) pieces.push({ p: " ", word: -1 });
+      pieces.push({ p: ps.join(" "), word: first + i });
+    });
+  };
+  for (const m of clean.matchAll(PUNCT)) {
+    await phrase(clean.slice(at, m.index));
+    pieces.push({ p: m[0].replace(/\s+/g, " "), word: -1 });
+    at = m.index + m[0].length;
+  }
+  await phrase(clean.slice(at));
+  return { words, pieces };
+}
+
+/** Pieces to token ids (characters the vocabulary lacks are dropped), split into runs that fit the model. */
+function tokenize(pieces: { p: string; word: number }[], vocab: Map<string, number>): { ids: number[]; word: number[] }[] {
+  const runs: { ids: number[]; word: number[] }[] = [{ ids: [], word: [] }];
+  let lastBreak = { run: 0, at: 0 };
+  for (const { p, word } of pieces) {
+    for (const ch of p) {
+      const id = vocab.get(ch);
+      if (id === undefined) continue;
+      let run = runs.at(-1)!;
+      if (run.ids.length >= MAX_TOKENS) {
+        // Too long for one pass: cut at the last pause (or here) and carry the rest into a new run.
+        const cut = lastBreak.run === runs.length - 1 && lastBreak.at > 0 ? lastBreak.at : run.ids.length;
+        const next = { ids: run.ids.splice(cut), word: run.word.splice(cut) };
+        runs.push(next);
+        run = next;
+      }
+      run.ids.push(id);
+      run.word.push(word);
+      if (word < 0 && /[.!?;:,]/.test(ch)) lastBreak = { run: runs.length - 1, at: run.ids.length };
+    }
+  }
+  return runs.filter((r) => r.ids.length);
+}
+
+export class KokoroAdapter implements VoiceAdapter {
+  readonly id = "kokoro";
+
+  async listVoices({ query }: { query?: string } = {}): Promise<VoiceInfo[]> {
+    const q = query?.trim().toLowerCase() ?? "";
+    return Object.entries(VOICES)
+      .map(([id, v]) => ({ id, name: v.name, description: `${v.accent} · ${v.gender} · quality ${v.grade}`, own: false }))
+      .filter((v) => !q || `${v.name} ${v.description}`.toLowerCase().includes(q));
+  }
+
+  synthesize(text: string, opts: SynthOptions): Promise<Clip> {
+    const next = queue.then(() => this.run(text, opts));
+    queue = next.catch(() => {});
+    return next;
+  }
+
+  private async run(text: string, { voice, speed = 1, tone, signal }: SynthOptions): Promise<Clip> {
+    if (!VOICES[voice]) throw new VoiceError(`Kokoro has no voice "${voice}"`);
+    if (!kokoroReady()) throw new VoiceError("Download the Kokoro voice in Settings first");
+    const { ort, run, vocab } = await load();
+    const pace = Math.max(0.6, Math.min(1.5, speed * (tone ? KOKORO_PACE[tone] : 1)));
+    const { words: textWords, pieces } = await phonemePieces(text, voice.startsWith("b"));
+    const voiceStyle = style(voice);
+    const audio: Float32Array[] = [];
+    /** When each of the line's words is said, by index into `textWords`. */
+    const timed: { w: number; start: number; end: number }[] = [];
+    let offset = 0;
+    for (const chunk of tokenize(pieces, vocab)) {
+      signal?.throwIfAborted();
+      const n = Math.min(chunk.ids.length, MAX_TOKENS - 1);
+      const out = await run.run({
+        input_ids: new ort.Tensor("int64", BigInt64Array.from([0, ...chunk.ids, 0].map(BigInt)), [1, chunk.ids.length + 2]),
+        style: new ort.Tensor("float32", voiceStyle.slice(n * 256, n * 256 + 256), [1, 256]),
+        speed: new ort.Tensor("float32", Float32Array.from([pace]), [1]),
+      });
+      const waveform = out.waveform!.data as Float32Array;
+      const durations = out.durations?.data as Float32Array | BigInt64Array | undefined;
+      audio.push(waveform);
+      const seconds = waveform.length / SAMPLE_RATE;
+      if (durations?.length === chunk.ids.length + 2) {
+        // Each token's duration is in model frames; scale them so they add up to the clip's real length.
+        const d = Array.from(durations, Number);
+        const perFrame = seconds / (d.reduce((a, b) => a + b, 0) || 1);
+        let t = offset + d[0]! * perFrame;
+        chunk.word.forEach((w, i) => {
+          const dt = d[i + 1]! * perFrame;
+          const last = timed.at(-1);
+          if (w >= 0 && last?.w === w) last.end = t + dt;
+          else if (w >= 0) timed.push({ w, start: t, end: t + dt });
+          t += dt;
+        });
+      } else {
+        const said = [...new Set(chunk.word.filter((w) => w >= 0))];
+        estimateWords(said.map((w) => textWords[w]).join(" "), seconds).forEach((x, i) => timed.push({ w: said[i]!, start: x.start + offset, end: x.end + offset }));
+      }
+      offset += seconds;
+    }
+    const pcm = Buffer.alloc(audio.reduce((a, b) => a + b.length, 0) * 2);
+    let i = 0;
+    for (const part of audio) for (const s of part) pcm.writeInt16LE(Math.round(Math.max(-1, Math.min(1, s)) * 32767), (i++) * 2);
+    return {
+      audio: wav(pcm, SAMPLE_RATE),
+      mime: "audio/wav",
+      durationMs: Math.round(offset * 1000),
+      words: timed.map(({ w, start, end }) => ({ word: textWords[w]!, start, end })),
+    };
+  }
+}

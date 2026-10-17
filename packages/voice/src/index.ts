@@ -2,6 +2,9 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { KOKORO_DEFAULT_VOICE, KokoroAdapter, kokoroReady } from "./kokoro.ts";
+
+export { downloadKokoro, KOKORO_SIZE, KokoroAdapter, kokoroReady, kokoroStatus, removeKokoro, type ModelStatus } from "./kokoro.ts";
 
 /**
  * Narration audio. One small interface so any provider plugs in; providers only ever receive
@@ -247,12 +250,18 @@ export function wav(pcm: Uint8Array, rate: number): Uint8Array {
 
 // ---------------------------------------------------------------- choosing and caching
 
-export const PROVIDERS = ["cartesia", "fish-audio"] as const;
+/** Cloud voices need a key; local ones run on this computer once their weights are downloaded. */
+export const CLOUD_PROVIDERS = ["cartesia", "fish-audio"] as const;
+export const LOCAL_PROVIDERS = ["kokoro"] as const;
+export const PROVIDERS = [...CLOUD_PROVIDERS, ...LOCAL_PROVIDERS] as const;
+export type CloudProviderId = (typeof CLOUD_PROVIDERS)[number];
 export type ProviderId = (typeof PROVIDERS)[number];
-/** Where each provider's key comes from (Docent's .env or the shell). */
-export const KEY_ENV: Record<ProviderId, string> = { cartesia: "CARTESIA_API_KEY", "fish-audio": "FISH_AUDIO_API_KEY" };
-/** Cartesia "Ricardo", the brief's starting narrator. Fish Audio has no default: pick one in Settings. */
-const DEFAULT_VOICES: Partial<Record<ProviderId, string>> = { cartesia: "8499aae3-022c-4d55-8283-0c2e8adbefb4" };
+export const isCloud = (p: ProviderId): p is CloudProviderId => (CLOUD_PROVIDERS as readonly string[]).includes(p);
+/** Where each cloud provider's key comes from (Docent's .env or the shell). */
+export const KEY_ENV: Record<CloudProviderId, string> = { cartesia: "CARTESIA_API_KEY", "fish-audio": "FISH_AUDIO_API_KEY" };
+export const PROVIDER_NAMES: Record<ProviderId, string> = { cartesia: "Cartesia", "fish-audio": "Fish Audio", kokoro: "Kokoro" };
+/** Cartesia "Ricardo", the brief's starting narrator; Kokoro's best-graded voice. Fish Audio has no default: pick one in Settings. */
+const DEFAULT_VOICES: Partial<Record<ProviderId, string>> = { cartesia: "8499aae3-022c-4d55-8283-0c2e8adbefb4", kokoro: KOKORO_DEFAULT_VOICE };
 
 interface VoiceConfig {
   voice?: { provider?: string; voice?: string; voices?: Partial<Record<ProviderId, string>>; speed?: number; expressive?: boolean; pronunciations?: Record<string, string> };
@@ -331,25 +340,30 @@ export function setVoiceSettings(patch: { provider?: ProviderId; voice?: string;
   return next;
 }
 
-/** An adapter for a provider, if its key is set. */
-export function adapterFor(provider: ProviderId, key = process.env[KEY_ENV[provider]]): VoiceAdapter | null {
+/** An adapter for a provider: a cloud one if its key is set, a local one if its weights are downloaded. */
+export function adapterFor(provider: ProviderId, key = isCloud(provider) ? process.env[KEY_ENV[provider]] : undefined): VoiceAdapter | null {
+  if (provider === "kokoro") return kokoroReady() ? new KokoroAdapter() : null;
   if (!key) return null;
   return provider === "fish-audio" ? new FishAudioAdapter(key) : new CartesiaAdapter(key);
 }
+
+/** What's missing before a provider can speak. */
+export const setupHint = (provider: ProviderId) =>
+  isCloud(provider) ? `Add a ${PROVIDER_NAMES[provider]} API key in Settings` : `Download the ${PROVIDER_NAMES[provider]} voice in Settings`;
 
 /** The configured narrator, or why there isn't one. */
 export function pickVoice(): { adapter: VoiceAdapter; voice: string; speed: number; expressive: boolean } | { reason: string } {
   const { provider, voices, speed, expressive } = voiceSettings();
   const adapter = adapterFor(provider);
-  const name = provider === "fish-audio" ? "Fish Audio" : "Cartesia";
-  if (!adapter) return { reason: `Add a ${name} API key in Settings to hear the narration` };
+  const name = PROVIDER_NAMES[provider];
+  if (!adapter) return { reason: `${setupHint(provider)} to hear the narration` };
   const voice = voices[provider];
   if (!voice) return { reason: `Choose a ${name} voice in Settings` };
   return { adapter, voice, speed, expressive };
 }
 
 /** Checks a key can actually speak (some keys can list voices but not synthesize). */
-export async function testKey(provider: ProviderId, key: string, voice?: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+export async function testKey(provider: CloudProviderId, key: string, voice?: string): Promise<{ ok: true } | { ok: false; reason: string }> {
   const adapter = adapterFor(provider, key)!;
   try {
     if (voice) await adapter.synthesize("Ready.", { voice });
