@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import type { AskAnswer, Route } from "@docent/contracts";
+import type { AskAnswer, AskedBefore, Route } from "@docent/contracts";
 import { api } from "../../shared/api/client.ts";
 
 export type Stage = "reading" | "answering" | "checking";
@@ -8,6 +8,10 @@ export interface Turn {
   stage: Stage | "done" | "error";
   answer?: AskAnswer;
   error?: string;
+  /** Answered before for the same board and code, and served from disk. */
+  cachedAt?: string;
+  /** Brought back from disk when the chat opened: shown as it was, not typed again. */
+  restored?: boolean;
 }
 
 /** One conversation per view, kept while the app is open, so coming back to a view keeps its thread. */
@@ -28,6 +32,14 @@ export function useThread(key: string): Turn[] {
 
 export const isAsking = () => !!inFlight;
 
+/** A board's earlier conversation, from disk, for a thread that has nothing in it yet. */
+export function restoreThread(key: string, asked: AskedBefore[]): boolean {
+  if (threads.get(key)?.length || !asked.length) return false;
+  threads.set(key, asked.map((a) => ({ question: a.question, stage: "done", answer: a.answer, restored: true })));
+  bump();
+  return true;
+}
+
 /** `view` is what's on screen: the board's cards and links. */
 export async function askQuestion(route: Route, question: string, view: { boxes: { id: string; title: string; sub?: string }[]; links: { from: string; to: string; label?: string }[] }): Promise<void> {
   const key = routeKey(route);
@@ -44,7 +56,7 @@ export async function askQuestion(route: Route, question: string, view: { boxes:
       if (e.type === "stage") turn.stage = e.stage;
       // The draft is readable at once; its labels say "checking" until the final answer settles them.
       else if (e.type === "draft") turn.answer = e.answer;
-      else if (e.type === "answer") Object.assign(turn, { stage: "done", answer: e.answer });
+      else if (e.type === "answer") Object.assign(turn, { stage: "done", answer: e.answer, ...(e.cachedAt ? { cachedAt: e.cachedAt } : {}) });
       else Object.assign(turn, { stage: "error", error: e.error });
       bump();
     }, abort.signal);

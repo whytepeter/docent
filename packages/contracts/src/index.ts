@@ -223,8 +223,16 @@ export type AskEvent =
   | { type: "stage"; stage: "reading" | "answering" | "checking" }
   /** The answer once the citation check has passed, shown while the second reader settles its labels. */
   | { type: "draft"; answer: AskAnswer }
-  | { type: "answer"; answer: AskAnswer }
+  /** cachedAt: this exact question was answered before, for the same board and code; it's served from disk. */
+  | { type: "answer"; answer: AskAnswer; cachedAt?: string }
   | { type: "error"; error: string };
+
+/** A question asked on a board earlier, with its checked answer: the board's conversation after a reload. */
+export interface AskedBefore {
+  question: string;
+  answer: AskAnswer;
+  at: string;
+}
 
 /** A voice to choose from in Settings. */
 export interface VoiceOption {

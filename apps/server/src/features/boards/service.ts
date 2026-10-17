@@ -8,8 +8,8 @@ import type { RepoService } from "../repo/index.ts";
 
 /** Typical times, for honest estimates (seconds). */
 const FLOWS_S = 60;
-const BOARD_S = 210;
-const CHECK_S = 70;
+const BOARD_S = 140;
+const CHECK_S = 20;
 const OVERVIEW_S = 80;
 const OVERVIEW_CHECK_S = 50;
 

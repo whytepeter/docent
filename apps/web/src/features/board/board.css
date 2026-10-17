@@ -298,3 +298,4 @@
 .bd-ln { position: relative; }
 .bd-val { position: absolute; right: 10px; top: 50%; max-width: 60%; overflow: hidden; text-overflow: ellipsis; padding: 0 9px; border-radius: 7px; background: var(--st-y); color: var(--st-ink); font: 700 15px/22px var(--hand); white-space: nowrap; box-shadow: 1px 3px 8px rgba(0, 0, 0, .25); transform: translateY(-50%) rotate(-1.2deg); animation: bd-val-in .35s var(--ease-out) both; }
 @keyframes bd-val-in { from { opacity: 0; transform: translateY(-50%) rotate(-1.2deg) scale(.85); } }
+.bd-chat-cached { margin: 0; font-size: 12px; color: var(--mut); }

@@ -25,19 +25,40 @@ const MAX_LINES = 40;
 /** Claims the second reader looks at: everything that would be shown as fact. */
 export const needsReview = (c: AnalysisClaim) => c.label === "confirmed" || c.label === "record";
 
+/** Claims per second-reader run, and how many runs go at once. */
+const BATCH = 6;
+const PARALLEL = 3;
+
+/**
+ * The second reader, in batches run side by side: each batch is a separate session that sees only its own
+ * claims (numbered as on the board, so verdicts fold back in place). Low effort: the cited code is in the
+ * prompt, and the job is to check it, not to explore.
+ */
 export async function refuteClaims(llm: LlmProvider, facts: Facts, root: string, claims: AnalysisClaim[], signal?: AbortSignal): Promise<AnalysisClaim[]> {
   const ids = claims.flatMap((c, i) => (needsReview(c) ? [i] : []));
   if (!ids.length) return claims;
-  const result = await llm.ask({
-    system: SYSTEM,
-    prompt: reviewPrompt(facts, root, claims, ids),
-    schema: RefuteSchema,
-    tools: llm.id === "claude-code" ? "read" : "none",
-    cwd: root,
-    effort: "medium",
-    signal,
-  });
-  return applyReview(claims, result.data.verdicts);
+  const batches = Array.from({ length: Math.ceil(ids.length / BATCH) }, (_, b) => ids.slice(b * BATCH, (b + 1) * BATCH));
+  const verdicts: Refutation["verdicts"] = [];
+  let next = 0;
+  const worker = async () => {
+    while (next < batches.length) {
+      const batch = batches[next++]!;
+      const result = await llm.ask({
+        system: SYSTEM,
+        prompt: reviewPrompt(facts, root, claims, batch),
+        schema: RefuteSchema,
+        tools: llm.id === "claude-code" ? "read" : "none",
+        cwd: root,
+        effort: "low",
+        signal,
+      });
+      // Only verdicts for this batch's own claims count.
+      const mine = new Set(batch);
+      verdicts.push(...result.data.verdicts.filter((v) => mine.has(v.id)));
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(PARALLEL, batches.length) }, worker));
+  return applyReview(claims, verdicts);
 }
 
 /**

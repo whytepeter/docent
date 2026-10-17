@@ -164,7 +164,7 @@ export interface Board {
 
 const BOARD_SYSTEM = `You are Docent, taking a developer through one flow of a codebase they didn't write, the way a senior engineer would at a real whiteboard. It replaces reading the READMEs: they watch and listen, they aren't tested. They should come away able to say what it does, follow a request through it, know what happens when it goes wrong, and know why it's built this way.
 
-Read the code (you have read-only tools) and build the board:
+The code of the flow's files is below the facts, with line numbers: work from it, and use your read-only tools only for other files the flow really needs. Then build the board:
 - 3 to 6 cards, one per part the request passes through, in order. Each card shows a real excerpt of a file: give the file and the line range (8–20 lines that matter); Docent cuts the code from the file itself.
 - Edges between cards with what travels along them.
 - The tour is the whole board. Its steps, in order:
@@ -191,10 +191,41 @@ export async function writeBoard(llm: LlmProvider, facts: Facts, root: string, f
     `Files it runs through: ${flow.files.join(", ")}`,
     "",
     featureDigest(facts, flow.files),
+    "",
+    flowSource(root, flow.files),
   ].join("\n");
   const result = await llm.ask({ system: BOARD_SYSTEM, prompt, schema: BoardSchema, tools: llm.id === "claude-code" ? "read" : "none", cwd: root, effort: "medium", signal });
   // The citation check is mechanical and instant, so it runs before the board is shown; the second reader runs behind it.
   return citeBoard(cleanBoard(result.data, facts, root, flow.id, result.model), facts, root);
+}
+
+const FILE_LINES = 700;
+const SOURCE_CHARS = 150_000;
+
+/**
+ * The flow's own files, numbered, so the writer starts with the code in hand instead of opening each file
+ * with a tool call. Long files are cut (and say so); the writer can still read the rest.
+ */
+function flowSource(root: string, files: string[]): string {
+  const out = ["The code of the flow's files (line numbers are real; cite them):"];
+  let used = 0;
+  for (const f of files) {
+    let lines: string[];
+    try {
+      lines = readFileSync(join(root, f), "utf8").split("\n");
+    } catch {
+      continue;
+    }
+    const shown = lines.slice(0, FILE_LINES).map((l, i) => `${String(i + 1).padStart(5)}  ${l}`).join("\n");
+    if (used + shown.length > SOURCE_CHARS) {
+      out.push("", `=== ${f} (${lines.length} lines) — not included, too much code already; read it if you need it`);
+      continue;
+    }
+    used += shown.length;
+    out.push("", `=== ${f} (${lines.length} lines)`, shown);
+    if (lines.length > FILE_LINES) out.push(`… cut at line ${FILE_LINES} of ${lines.length}; read the file for the rest`);
+  }
+  return out.join("\n");
 }
 
 /** Runs the citation check over every claim on the board (fast, no Claude). */

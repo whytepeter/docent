@@ -1,4 +1,4 @@
-import type { AskEvent, AskRequest, BoardState, FlowsState, Settings, VoiceClip, VoiceOption, VoiceProvider, VoiceStatus, FeaturesState, Job, SourceSlice, Workspace } from "@docent/contracts";
+import type { AskEvent, AskRequest, AskedBefore, BoardState, FlowsState, Settings, VoiceClip, VoiceOption, VoiceProvider, VoiceStatus, FeaturesState, Job, SourceSlice, Workspace } from "@docent/contracts";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   // The server refuses state changes without this header, which other sites can't send.
@@ -36,6 +36,7 @@ const json = (body: unknown): RequestInit => ({ method: "POST", headers: { "cont
 
 export const api = {
   ask,
+  askHistory: (boardId: string) => request<AskedBefore[]>(`/api/ask/history?board=${q(boardId)}`),
   workspace: () => request<Workspace>("/api/workspace"),
   openRepo: (path: string) => request<Workspace>("/api/workspace/open", json({ path })),
   findDropped: (name: string, children: string[]) => request<{ paths: string[] }>("/api/workspace/find", json({ name, children })),

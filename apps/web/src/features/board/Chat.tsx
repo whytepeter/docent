@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { Board, Route } from "@docent/contracts";
 import { Icon } from "../../shared/ui/index.ts";
-import { askQuestion, routeKey, stopAsking, useThread, type Turn } from "../ask/index.ts";
+import { api } from "../../shared/api/client.ts";
+import { askQuestion, restoreThread, routeKey, stopAsking, useThread, type Turn } from "../ask/index.ts";
 import type { BoardEngine, EngineState } from "./engine.ts";
 import { Said } from "./Said.tsx";
 
@@ -16,11 +17,11 @@ const CHARS_PER_SECOND = 170;
 function TypedAnswer({ turn, checking, onGrow, children }: { turn: Turn; checking: boolean; onGrow: () => void; children: React.ReactNode }) {
   const paragraphs = turn.answer!.paragraphs;
   const total = paragraphs.reduce((n, p) => n + p.text.length, 0);
-  const [shown, setShown] = useState(() => (typed.has(turn) || matchMedia("(prefers-reduced-motion: reduce)").matches ? Infinity : 0));
+  const [shown, setShown] = useState(() => (typed.has(turn) || turn.restored || matchMedia("(prefers-reduced-motion: reduce)").matches ? Infinity : 0));
   const grow = useRef(onGrow);
   grow.current = onGrow;
   useEffect(() => {
-    if (typed.has(turn)) return;
+    if (typed.has(turn) || turn.restored) return;
     let raf = 0;
     const t0 = performance.now();
     const tick = (now: number) => {
@@ -43,9 +44,19 @@ function TypedAnswer({ turn, checking, onGrow, children }: { turn: Turn; checkin
         left -= p.text.length;
         return n > 0 || j === 0 ? <Said key={j} claim={p} checking={checking} typed={n} /> : null;
       })}
+      {shown >= total && turn.cachedAt && <p className="bd-chat-cached">Answered earlier ({when(turn.cachedAt)}); the board and the code haven't changed since.</p>}
       {shown >= total && children}
     </div>
   );
+}
+
+/** "5 min ago", "yesterday": how long ago an answer was given. */
+function when(at: string) {
+  const min = Math.round((Date.now() - Date.parse(at)) / 60000);
+  if (min < 1) return "just now";
+  if (min < 60) return `${min} min ago`;
+  const h = Math.round(min / 60);
+  return h < 24 ? `${h} h ago` : h < 48 ? "yesterday" : `${Math.round(h / 24)} days ago`;
 }
 
 const STAGE: Record<string, string> = { reading: "Reading the board", answering: "Reading the code", checking: "Checking every claim" };
@@ -72,6 +83,19 @@ export function Chat({ board, es, engine, onClose, ask, backToTour }: { board: B
   const busy = turns.some((t) => t.stage !== "done" && t.stage !== "error");
   // Answers from before the chat opened aren't replayed; only new ones point.
   const pointed = useRef(turns.length);
+  // The board's earlier conversation comes back from disk the first time the chat opens after a reload.
+  const key = routeKey(route);
+  useEffect(() => {
+    let live = true;
+    api.askHistory(board.flowId).then((asked) => {
+      if (!live) return;
+      // Restored answers were pointed at when they were first asked; don't replay them.
+      if (restoreThread(key, asked)) pointed.current = asked.length;
+    }, () => {});
+    return () => {
+      live = false;
+    };
+  }, [key, board.flowId]);
 
   // The thread updates its turns in place, so watch the last turn's stage, not the array.
   const last = turns[turns.length - 1];
