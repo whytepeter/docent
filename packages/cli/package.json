@@ -1,5 +1,5 @@
 {
-  "name": "docent-cli",
+  "name": "codedocent",
   "version": "0.1.0",
   "description": "Guided, narrated tours of your codebase, with evidence for every claim. Runs locally on your own Claude Code or Codex.",
   "keywords": [
@@ -21,7 +21,7 @@
   "bugs": "https://github.com/whytepeter/docent/issues",
   "type": "module",
   "bin": {
-    "docent": "./dist/docent.js"
+    "docent": "dist/docent.js"
   },
   "files": [
     "dist"
@@ -31,7 +31,7 @@
   },
   "scripts": {
     "build": "node build.mjs",
-    "prepack": "node build.mjs"
+    "prepublishOnly": "node -e \"require('fs').accessSync('dist/docent.js')\""
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.133.0",

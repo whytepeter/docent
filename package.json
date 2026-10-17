@@ -7,7 +7,7 @@
   "engines": { "node": ">=22" },
   "scripts": {
     "docent": "tsx packages/cli/src/index.ts",
-    "build": "pnpm --filter @docent/web build && pnpm --filter docent-cli build",
+    "build": "pnpm --filter @docent/web build && pnpm --filter codedocent build",
     "dev": "pnpm --parallel --filter @docent/server --filter @docent/web dev",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p apps/web/tsconfig.json"
