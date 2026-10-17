@@ -9,7 +9,10 @@ dist/
 .env.*
 !.env.example
 
-# OpenWolf per-session state
-.wolf/hooks/
-.wolf/cache/
-.wolf/token-ledger.json
+# Personal tool state (agent notes, editor launch configs)
+.wolf/
+.claude/
+
+# Copied into the npm package at build time (from the repo root)
+packages/cli/README.md
+packages/cli/LICENSE

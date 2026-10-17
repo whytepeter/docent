@@ -1,6 +1,6 @@
 # Docent
 
-Read `DOCENT-BRIEF.md` (what and why) and `PLAN.md` (how, milestone by milestone) before working here.
+Read `docs/design.md` (what and why) and `docs/roadmap.md` (how, milestone by milestone) before working here.
 
 ## Rules
 

@@ -18,3 +18,4 @@ export { CodexProvider } from "./providers/codex.ts";
 export { chosenProvider, isProviderId, pickProvider, providerStatuses, PROVIDERS, readConfig, writeConfig } from "./registry.ts";
 export { z };
 export { hasSecret, redact, REDACTED } from "./redact.ts";
+export { DOCENT_ENV, loadDocentEnv } from "./secrets.ts";

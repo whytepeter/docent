@@ -1,6 +1,10 @@
+import { execFile } from "node:child_process";
 import { createWriteStream, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+import { promisify } from "node:util";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { Clip, SynthOptions, Tone, VoiceAdapter, VoiceInfo } from "./index.ts";
@@ -65,6 +69,46 @@ const KOKORO_PACE: Record<Tone, number> = { calm: 1, warm: 1, curious: 1, concer
 export const modelDir = () => join(homedir(), ".docent", "models", "kokoro");
 const manifest = () => join(modelDir(), "manifest.json");
 
+/**
+ * The packages that run the model. onnxruntime-node weighs about 290 MB, so it isn't part of Docent's own
+ * install: a checkout has it from the workspace, and an npm install gets it here, with the weights.
+ */
+const RUNTIME = { "onnxruntime-node": "1.30.0", phonemizer: "1.2.1" } as const;
+const runtimeDir = () => join(modelDir(), "runtime");
+
+/**
+ * Where a runtime package resolves from: Docent's own dependencies first, then the downloaded runtime.
+ * The runtime folder is asked only once the package is in it, because Node remembers a failed lookup
+ * and would keep failing after the install.
+ */
+function resolveRuntime(name: keyof typeof RUNTIME): string | null {
+  const downloaded = existsSync(join(runtimeDir(), "node_modules", name, "package.json"));
+  for (const from of [import.meta.url, ...(downloaded ? [pathToFileURL(join(runtimeDir(), "package.json")).href] : [])]) {
+    try {
+      return createRequire(from).resolve(name);
+    } catch {
+      /* not there: try the next place */
+    }
+  }
+  return null;
+}
+
+const runtimeReady = () => Object.keys(RUNTIME).every((n) => resolveRuntime(n as keyof typeof RUNTIME));
+
+async function importRuntime<T>(name: keyof typeof RUNTIME): Promise<T> {
+  const at = resolveRuntime(name);
+  if (!at) throw new VoiceError("The local voice isn't downloaded yet. Download it in Settings → Voice.");
+  return (await import(pathToFileURL(at).href)) as T;
+}
+
+/** Installs the runtime packages into Docent's model folder with npm (never into a repo). */
+async function installRuntime(signal: AbortSignal): Promise<void> {
+  mkdirSync(runtimeDir(), { recursive: true });
+  writeFileSync(join(runtimeDir(), "package.json"), JSON.stringify({ private: true, dependencies: RUNTIME }));
+  const npm = process.platform === "win32" ? "npm.cmd" : "npm";
+  await promisify(execFile)(npm, ["install", "--omit=dev", "--no-audit", "--no-fund"], { cwd: runtimeDir(), signal, shell: process.platform === "win32" });
+}
+
 export interface ModelStatus {
   state: "absent" | "downloading" | "ready" | "error";
   /** Bytes on disk so far, while downloading. */
@@ -78,17 +122,17 @@ let download: { received: number; size: number; abort: AbortController; error?: 
 /** Ready once every file is in and the manifest written last says this revision. */
 export function kokoroReady(): boolean {
   try {
-    return (JSON.parse(readFileSync(manifest(), "utf8")) as { revision?: string }).revision === REVISION;
+    return (JSON.parse(readFileSync(manifest(), "utf8")) as { revision?: string }).revision === REVISION && runtimeReady();
   } catch {
     return false;
   }
 }
 
 export function kokoroStatus(): ModelStatus {
+  if (download && !download.error) return { state: "downloading", received: download.received, size: download.size };
   if (kokoroReady()) return { state: "ready", received: KOKORO_SIZE, size: KOKORO_SIZE };
   if (!download) return { state: "absent", received: 0, size: KOKORO_SIZE };
-  if (download.error) return { state: "error", received: download.received, size: download.size, error: download.error };
-  return { state: "downloading", received: download.received, size: download.size };
+  return { state: "error", received: download.received, size: download.size, error: download.error };
 }
 
 /** Starts the download in the background (once); poll `kokoroStatus` for progress. */
@@ -98,6 +142,7 @@ export function downloadKokoro(): ModelStatus {
   download = job;
   void (async () => {
     try {
+      if (!runtimeReady()) await installRuntime(job.abort.signal);
       for (const file of FILES) {
         const to = join(modelDir(), file);
         if (existsSync(to)) continue;
@@ -139,7 +184,7 @@ let queue: Promise<unknown> = Promise.resolve();
 
 function load() {
   session ??= (async () => {
-    const ort = await import("onnxruntime-node");
+    const ort = await importRuntime<Ort>("onnxruntime-node");
     const run = await ort.InferenceSession.create(join(modelDir(), MODEL_FILE), { executionProviders: ["cpu"] });
     const tok = JSON.parse(readFileSync(join(modelDir(), "tokenizer.json"), "utf8")) as { model: { vocab: Record<string, number> } };
     return { ort, run, vocab: new Map(Object.entries(tok.model.vocab)) };
@@ -171,7 +216,7 @@ const tidy = (p: string) => p.replace(/ʲ/g, "j").replace(/r/g, "ɹ").replace(/x
  * for pauses and spaces.
  */
 export async function phonemePieces(text: string, british: boolean): Promise<{ words: string[]; pieces: { p: string; word: number }[] }> {
-  const { phonemize } = await import("phonemizer");
+  const { phonemize } = await importRuntime<typeof import("phonemizer")>("phonemizer");
   const words: string[] = [];
   const pieces: { p: string; word: number }[] = [];
   const clean = text.replace(/[‘’]/g, "'").replace(/[^\S\n]+/g, " ").trim();

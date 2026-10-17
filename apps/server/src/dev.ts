@@ -1,15 +1,14 @@
 // Development: API only on :4477; Vite serves the app on :5173 and proxies /api here.
 // DOCENT_REPO or a path opens that codebase; otherwise the most recent one, so a restart
 // lands where you were. With nothing recent, the app asks.
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
+import { loadDocentEnv } from "@docent/llm";
 import { startServer } from "./index.ts";
 
 // Keys (CARTESIA_API_KEY, ANTHROPIC_API_KEY…) from Docent's own .env, if there is one.
-const envFile = join(dirname(fileURLToPath(import.meta.url)), "../../../.env");
-if (existsSync(envFile)) process.loadEnvFile(envFile);
+loadDocentEnv();
 
 function mostRecent(): string | undefined {
   try {

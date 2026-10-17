@@ -91,22 +91,6 @@ describe("extract on a small fixture", () => {
   });
 });
 
-const KYC = process.env.DOCENT_KYC ?? "/Users/apple/Documents/code/skaletek/kyc-site-main";
-describe.skipIf(!existsSync(KYC))("extract on kyc-site-main (matches the hand-traced mockup)", () => {
-  it("finds submitDocument's two screens, its callees and its nine tests", () => {
-    const facts = extract(KYC);
-    const c = connections(facts, findSymbols(facts, "submitDocument")[0]!);
-    const screens = c.callers.filter((e) => !e.from.includes("#test:")).map((e) => `${e.file}:${e.line}`).sort();
-    expect(screens).toEqual([
-      "src/features/document-liveness-capture/components/DocumentLivenessCapture.tsx:423",
-      "src/features/document-upload/components/DocumentUpload.tsx:153",
-    ]);
-    expect(new Set(c.callees.map((e) => e.to.split("#")[1]))).toEqual(new Set(["createApplicantApiClient.mutate", "StorageUploadError", "uploadFile", "sha256"]));
-    expect(c.tests.length).toBeGreaterThanOrEqual(9);
-    expect(facts.docs.find((d) => d.path === "ARCHITECTURE.md")?.mentions.some((m) => m.missing && m.text === "src/shared/services/document-submission.ts")).toBe(true);
-  }, 60_000);
-});
-
 describe("extract on a folder without git", () => {
   it("lists files (respecting .gitignore), builds the graph, and says plainly there is no history", () => {
     const root = mkdtempSync(join(tmpdir(), "docent-nogit-"));

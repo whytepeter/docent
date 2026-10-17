@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
@@ -6,7 +7,9 @@ import { RepoService } from "./features/repo/index.ts";
 
 export { RepoService };
 
-const WEB_DIST = join(dirname(fileURLToPath(import.meta.url)), "../../web/dist");
+// The built app: beside the bundle when installed from npm, or apps/web/dist in a checkout.
+const HERE = dirname(fileURLToPath(import.meta.url));
+const WEB_DIST = [join(HERE, "web"), join(HERE, "../../web/dist")].find((dir) => existsSync(join(dir, "index.html"))) ?? join(HERE, "web");
 
 export interface StartOptions {
   /** A folder to open right away. Without one, the app asks which codebase to open. */

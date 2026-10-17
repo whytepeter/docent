@@ -1,8 +1,6 @@
-# Docent: Brief for Claude Code
+# Docent: design
 
-> Read this whole document before writing anything. It explains the idea, the reasoning, and what "done" looks like. Where I name a constraint, treat it as a requirement. Everything else is yours to decide.
->
-> A hand-built mockup of the function view exists in `mockups/function-view.html`.
+> The original brief: the idea, the reasoning, and what "done" looks like. Where it names a constraint, treat it as a requirement. Some parts describe screens that have since been replaced by the guided tour; [roadmap.md](roadmap.md) says what was actually built.
 
 ---
 
@@ -59,7 +57,7 @@ The page shows these five questions as a self-check, with answers hidden until I
 ## 4. Principles (non-negotiable)
 
 **P1. Code is the source of truth. Docs are hints.**
-Never present a doc's claim as fact unless the code confirms it. When doc and code disagree, that disagreement is itself a finding. (The mockup found two in a single function: §11.)
+Never present a doc's claim as fact unless the code confirms it. When doc and code disagree, that disagreement is itself a finding. (The hand tracing found two in a single function: §11.)
 
 **P2. Analyze first, narrate second.**
 Extract facts mechanically (entry points, import graph, call graph, data models, external services, tests, git history) before any LLM explains anything. The LLM explains facts. It doesn't discover them by wandering.
@@ -155,7 +153,7 @@ repo
 
 **3. Verify.** One worker per feature traces it end to end, confirms or corrects its file set, sets a status (`working`, `partial`, `dead`, `unknown`), records issues, and finds the "why". Every claim goes through the citation check. A worker that can't verify something in a few reads marks it `unknown` and moves on.
 
-**5. Probe.** Where the repo has tests, Docent can check claims by running them in a scratch copy: break a line and see which tests fail, or add a throwaway probe test to observe a path. Results get the `ran it` label, and a probe that contradicts a claim demotes or corrects it. The mockup did this twice (§11). It never touches my working tree. Probing runs before episodes are written, so narration is built only from claims that have already survived it.
+**5. Probe.** Where the repo has tests, Docent can check claims by running them in a scratch copy: break a line and see which tests fail, or add a throwaway probe test to observe a path. Results get the `ran it` label, and a probe that contradicts a claim demotes or corrects it. The hand tracing did this twice (§11). It never touches my working tree. Probing runs before episodes are written, so narration is built only from claims that have already survived it.
 
 **6. Write episodes.** Using the Docent persona, produce scene specs. A scene step pairs one highlight with one spoken line (~35 words, 10–15 s). A scene runs 20–45 s and carries one idea. An episode runs 2–5 minutes, and a feature that needs more gets split into sub-features. Each step names the nodes, edges and code lines to highlight, the labeled packets that move along edges, the narration, the on-screen caption, and the evidence. Predict steps pause playback until I answer.
 
@@ -165,7 +163,7 @@ repo
 
 Write these supporting files from this brief: `tour.schema.json` (the content contract), `feature-discovery.md` (stages 1–4 with quality gates), `docent-persona.md` (voice and teaching rules for stage 5), and the audio build step.
 
-The mockup's data shapes are a tested starting point for the schema. See the `STEPS`, `NODES`, `BREAKS`, `WHATIF`, `LINE_NOTES` and `TABS` objects in `mockups/function-view.template.html`. They cover:
+The hand-built view's data shapes were the starting point for the schema. They covered:
 - **Scene steps:** `nodes`, `edges`, `lines`, `packets [edge, label, direction]`, `say` (narration), `cap` (caption), and predict steps with options and a labeled reveal.
 - **Node info:** a title, a path, and a list of claims.
 - **Break scenarios:** what breaks, what gets hurt, the failure chain step by step, and what the user sees.
@@ -217,50 +215,34 @@ A tour that goes stale becomes another outdated README.
 
 ## 10. Test repos
 
-**First: `~/Documents/code/skaletek/kyc-site-main`.** React 18 + Vite + TypeScript, ~220 source files, ~470 commits.
-- It has descriptive commit messages that explain *why* (good for P4).
-- It has real tests (`vitest`), so `ran it` probes work.
-- It has an `ARCHITECTURE.md`, feature READMEs, and agent files (`CLAUDE.md`, `AGENTS.md`, `.wolf/`), all hint-only.
-- Its imports are explicit, so the call graph should be mostly confirmable.
+Docent is developed against two kinds of real projects:
 
-The mockup is built on this repo.
+- **A single app:** React + Vite + TypeScript, a few hundred source files, a few hundred commits with messages that explain *why*, real `vitest` tests (so `ran it` probes work), and docs that have drifted from the code (so health has something to find).
+- **A monorepo:** a pnpm workspace (`apps/`, `packages/`) with a frontend, a server and many more files. This is the harder test: several apps, a server boundary and more framework wiring. Treat it as "one app at a time" first.
 
-**Second: `~/Documents/code/drawam`.** A pnpm monorepo (`apps/`, `packages/`), Vue plus a server, payments, LiveKit voice, ~1,480 source files, ~250 commits with unusually detailed messages. This is the harder test: several apps, a server boundary, and more framework wiring. Treat drawam as "one app at a time" first.
+## 11. The bar
 
-## 11. What the mockup already proved
+Before any code was written, one function view was traced by hand: its callers, callees and tests; two places where the docs had drifted from the code (one naming a class a commit had removed); a behavior worth knowing (when one of two parallel uploads fails, nothing cancels the other); a "why" found in a commit message; and two claims checked by running the tests in a scratch copy.
 
-`mockups/function-view.html` is the function view for `submitDocument()` in kyc-site-main (`src/shared/services/applicant-api/document-submission.ts`), built by hand from real tracing. Open it by double-clicking. It shows:
-
-- The layout is lean and macOS-style: a sidebar, a canvas, and an inspector you can hide. A floating playback bar, a health badge in the toolbar, and sheets for code and evidence.
-- Learn mode: an 8-step episode. The canvas shows only the diagram, with labeled data moving along arrows, and one line of narration. The inspector shows just the code for the current step. One step stops and asks you to predict before revealing.
-- Work mode: click any box to see what it is and how it connects. For storage and the API, "What if this fails?" shows how the failure spreads. The function's details (must stay true, if you change it, when it breaks, why, try it) sit in collapsed groups.
-
-Findings the tracing turned up, which are what Docent should find on its own:
-- **Docs wrong (confirmed):** `ARCHITECTURE.md:81-84` describes a "preflight" step and an old file path. The code has neither. The services README agrees with the code.
-- **Docs wrong (confirmed):** `src/shared/services/README.md:40` names `DocumentUploadError`. That class was removed in commit `0301b21`, when the storage helpers moved to `storage-upload.ts`, and `StorageUploadError` replaced it.
-- **Worth knowing (confirmed behavior, inferred impact):** when one side's upload fails, nothing cancels the other side's upload.
-- **Why, from history (record):** the submission key exists because an audit found repeated submissions (commit `da1cb63`).
-- **Ran it:** removing the key on line 164 makes exactly one test fail (1 failed, 8 passed). Storage refusing twice gives two presign calls, no submit, then `StorageUploadError 403`. Both were run in a scratch copy, so the repo was untouched.
-
-The mockup is hand-written content. The job is to make Docent **produce content of this quality by itself**, for any function, with the same honesty.
+That is the bar. Docent must **produce content of this quality by itself**, for any function, with the same honesty.
 
 ## 12. Build order
 
 Thin vertical slices, each one demonstrable. Accuracy is proven before polish, but motion and voice come early because they're the point.
 
-**M0 (done): Hand-built function view.** `mockups/function-view.html`.
+**M0 (done): Hand-built function view.** The bar in §11.
 
-**M1: Facts for kyc-site-main.** Files, imports, function-level call graph, entry points, tests→code map, git signals, docs index.
-*Done when:* for `submitDocument`, the extracted callers, callees and covering tests match what the mockup shows, and unresolved links are marked `inferred`.
+**M1: Facts for the first test repo.** Files, imports, function-level call graph, entry points, tests→code map, git signals, docs index.
+*Done when:* for the hand-traced function, the extracted callers, callees and covering tests match the hand tracing, and unresolved links are marked `inferred`.
 
 **M2: Work-mode skeleton, no LLM.** The local app renders the zoom levels from facts alone: system map from the graph, file and function connection views, the code, and breadcrumbs.
 *Done when:* I can click from the system map down to any function and see its real connections.
 
 **M3: Claims, features, health.** Feature discovery with my review step, verification workers, the citation check, the health report.
-*Done when:* every claim has evidence, the citation check demotes bad citations, and the health report finds the two doc problems in §11 without being told.
+*Done when:* every claim has evidence, the citation check demotes bad citations, and the health report finds the doc problems from §11 without being told.
 
 **M4: Episodes (Learn mode).** Scene-spec generation and the player: highlights, moving packets, captions, predict, step-through, zoom from flow into code. Placeholder timing from word count.
-*Done when:* a generated episode for the document-upload feature is at least as clear and accurate as the hand-built mockup.
+*Done when:* a generated episode for the hand-traced feature is at least as clear and accurate as the hand tracing.
 
 **M5: Voice.** Pluggable voice adapters (Cartesia and Fish Audio first), audio per step, hash-cached, with pacing from real durations and a pronunciation table.
 *Done when:* the episode plays with real narration, changing one sentence regenerates one clip, and no secret appears in any output.
@@ -271,7 +253,7 @@ Thin vertical slices, each one demonstrable. Accuracy is proven before polish, b
 **M7: Freshness.** Hashing, stage caching, incremental re-runs, and file watching while the app runs.
 *Done when:* editing one function re-generates only what depends on it, and an unchanged re-run makes no LLM or TTS calls.
 
-**M8: drawam.** Run the whole thing on the second repo, one app at a time, and fix what breaks.
+**M8: Monorepos.** Run the whole thing on the monorepo test repo, one app at a time, and fix what breaks.
 
 ## 13. How to know it's good
 
@@ -297,8 +279,8 @@ If an explanation is smooth but wrong, that's worse than no explanation. When in
 ## 15. Open questions
 
 - **Wait time for "explain this deeper":** generating claims, narration and audio for an unseen function takes time. What's acceptable: 20 seconds, a minute? Should Docent pre-generate deep-dives for all functions in a feature in the background after the first episode?
-- **Cost ceiling:** a full first run on drawam could be expensive. Should there be a budget per run, with a preview of the estimate?
-- **Agent logs:** kyc-site-main and drawam both have `.wolf/`, `.claude/`, `.codex/` and `.cursor/` folders. Which of these hold real session history worth mining for "why"?
+- **Cost ceiling:** a full first run on a large monorepo could be expensive. Should there be a budget per run, with a preview of the estimate?
+- **Agent logs:** Many repos have `.wolf/`, `.claude/`, `.codex/` and `.cursor/` folders. Which of these hold real session history worth mining for "why"?
 - **Existing tools:** a quick look at what DeepWiki, CodeSee-style maps and code-tour tools do well or badly, before M4, so we learn from them instead of rebuilding them.
 
 ---

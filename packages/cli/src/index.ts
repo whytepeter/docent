@@ -2,16 +2,22 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { connections, extract, findSymbols, type EdgeFact, type Facts } from "@docent/extract";
+import { loadDocentEnv } from "@docent/llm";
 import { execFile } from "node:child_process";
 import { statSync } from "node:fs";
 
+// This package's package.json: one folder up from src/ in a checkout, and from dist/ once built.
+const VERSION = (JSON.parse(readFileSync(fileURLToPath(new URL("../package.json", import.meta.url)), "utf8")) as { version?: string }).version ?? "dev";
+
 const USAGE = `docent — guided tours of a codebase
 
-  docent                         open the app and choose a codebase folder
+  docent                         open the app for the current folder (or choose one, outside a project)
   docent <repo>                  open the app for a repo (reads it first if needed)
+  docent --port <n>              use another port than 4477 (also DOCENT_PORT)
+  docent --version               print the version
   docent extract <repo>          read the repo and save its facts (never writes to the repo)
   docent fn <repo> <name>        show a function's connections from the saved facts
   docent stats <repo>            summarize the saved facts
@@ -23,7 +29,7 @@ const USAGE = `docent — guided tours of a codebase
   docent voice <repo> <id>       speak every line of an episode ahead of time (cached)
   docent verify <repo> [id]      verify features not yet verified (or one, again) with checked evidence
 
-Facts are cached in ~/.docent/repos/.`;
+Everything Docent writes lives in ~/.docent/. It never writes to the repo.`;
 
 const short = (path: string) => path.split("/").slice(-2).join("/");
 const dim = (s: string) => `\x1b[2m${s}\x1b[0m`;
@@ -227,11 +233,19 @@ async function verify(repo: string, only?: string) {
 
 async function openApp(repo?: string) {
   const { startServer } = await import("@docent/server");
-  const { url } = await startServer({ repo, log: (s) => process.stderr.write(dim(`  ${s}…\n`)) });
+  const log = (s: string) => process.stderr.write(dim(`  ${s}…\n`));
+  // 4477 already taken (often another Docent): take any free port rather than fail.
+  const { url } = await startServer({ repo, port, log }).catch((error: NodeJS.ErrnoException) => {
+    if (error.code !== "EADDRINUSE" || portAsked) throw error;
+    return startServer({ repo, port: 0, log });
+  });
   const showing = repo ? `is showing ${basename(resolve(repo))}` : "is ready; choose a codebase";
   console.log(`\n  ${bold("Docent")} ${showing} at ${url}\n  ${dim("Ctrl+C to stop.")}`);
-  const opener = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
-  if (!process.env.DOCENT_NO_OPEN) execFile(opener, [url], () => {});
+  // Straight to the codebase's page; without one, the welcome page asks which to open.
+  const page = repo ? `${url}/#/repo/${encodeURIComponent(basename(resolve(repo)))}` : url;
+  // `start` is built into cmd, and its first quoted argument is a window title.
+  const [opener, ...args] = process.platform === "darwin" ? ["open"] : process.platform === "win32" ? ["cmd", "/c", "start", ""] : ["xdg-open"];
+  if (!process.env.DOCENT_NO_OPEN) execFile(opener!, [...args, page], () => {});
 }
 
 const isDir = (p: string | undefined) => {
@@ -242,13 +256,21 @@ const isDir = (p: string | undefined) => {
   }
 };
 
-// Keys (CARTESIA_API_KEY, ANTHROPIC_API_KEY…) from Docent's own .env, if there is one. Never the analyzed repo's.
-const envFile = join(dirname(fileURLToPath(import.meta.url)), "../../../.env");
-if (existsSync(envFile)) process.loadEnvFile(envFile);
+/** The current folder, when it looks like a project; otherwise the app asks which codebase to open. */
+const here = () => [".git", "package.json"].some((f) => existsSync(join(process.cwd(), f))) ? process.cwd() : undefined;
 
-const [cmd, repo, name] = process.argv.slice(2);
+// Keys (CARTESIA_API_KEY, ANTHROPIC_API_KEY…) from Docent's own .env, if there is one. Never the analyzed repo's.
+loadDocentEnv();
+
+const args = process.argv.slice(2);
+const portAt = args.indexOf("--port");
+const portAsked = portAt >= 0 ? args.splice(portAt, 2)[1] : process.env.DOCENT_PORT;
+const port = Number(portAsked) || 4477;
+const [cmd, repo, name] = args;
 try {
-  if (!cmd) await openApp();
+  if (cmd === "--version" || cmd === "-v") console.log(VERSION);
+  else if (cmd === "--help" || cmd === "-h" || cmd === "help") console.log(USAGE);
+  else if (!cmd) await openApp(here());
   else if (isDir(cmd) && !repo) await openApp(cmd);
   else if (cmd === "open") await openApp(repo);
   else if (cmd === "doctor") await doctor();
