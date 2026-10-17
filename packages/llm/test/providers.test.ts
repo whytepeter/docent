@@ -56,6 +56,9 @@ describe("Codex arguments", () => {
     expect(config).toContain('default_permissions="docent-read"');
     expect(config.find((c) => c.startsWith("permissions.docent-read="))).toContain('extends=":read-only"');
     expect(config).toContain("features.hooks=false");
+    expect(config).toContain('approval_policy="never"');
+    for (const f of ["apps", "plugins", "browser_use", "computer_use", "image_generation", "multi_agent"]) expect(config).toContain(`features.${f}=false`);
+    expect(config).not.toContain("features.shell_tool=false"); // it reads by running commands
     expect(config).toContain("project_doc_max_bytes=0");
     expect(config).toContain('web_search="disabled"');
     expect(config).toContain('history.persistence="none"');
@@ -73,6 +76,11 @@ describe("Codex arguments", () => {
     const inside = codexArgs({ ...opts({ tools: "read" }), cwd: join(homedir(), ".docker", "proj") }, "/s.json");
     expect(inside.find((c) => c.startsWith("permissions."))).not.toContain(JSON.stringify(join(homedir(), ".docker")));
   });
+  it("has no shell at all when it doesn't read", () => {
+    const none = codexArgs({ ...opts(), cwd: "/scratch" }, "/s.json");
+    expect(none).toContain("features.shell_tool=false");
+    expect(none).toContain("features.unified_exec=false");
+  });
   it("maps effort, and caps max at xhigh", () => {
     expect(config).toContain('model_reasoning_effort="xhigh"');
     const low = codexArgs({ ...opts({ effort: "low" }), cwd: "/s" }, "/s.json");
@@ -87,7 +95,7 @@ describe("Codex arguments", () => {
   });
   it("puts Docent's instructions ahead of the prompt", () => {
     expect(codexPrompt("SYSTEM", "PROMPT", "none")).toMatch(/^<instructions>\nSYSTEM[\s\S]*Don't run commands[\s\S]*<\/instructions>\n\nPROMPT$/);
-    expect(codexPrompt("S", "P", "read")).toContain("read-only commands");
+    expect(codexPrompt("S", "P", "read")).toContain("reading works");
   });
 });
 

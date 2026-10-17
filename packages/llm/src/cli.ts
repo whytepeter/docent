@@ -1,4 +1,4 @@
-import { execFileSync, spawn } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -162,13 +162,8 @@ export function findBinary(name: string, extra: string[] = []): string | null {
   return dirs.map((d) => join(d, name)).find((p) => existsSync(p)) ?? null;
 }
 
-/** Runs a quick command (version, login status), never throwing. */
+/** Runs a quick command (version, login status), never throwing. Some CLIs print status to stderr, so both are kept. */
 export function quiet(bin: string, args: string[]): { ok: boolean; out: string } {
-  try {
-    const out = execFileSync(bin, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 8000 });
-    return { ok: true, out: out.trim() };
-  } catch (e) {
-    const err = e as { stdout?: string; stderr?: string };
-    return { ok: false, out: `${err.stdout ?? ""}${err.stderr ?? ""}`.trim() };
-  }
+  const r = spawnSync(bin, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 8000 });
+  return { ok: r.status === 0, out: `${r.stdout ?? ""}${r.stderr ?? ""}`.trim() };
 }

@@ -53,7 +53,9 @@ export class CodexProvider extends HeadlessCli {
     if (!version.ok) return { installed: false, signedIn: false, detail: version.out.slice(0, 200) };
     const login = quiet(this.bin, ["login", "status"]);
     const line = login.out.split("\n").find((l) => /logged in|not logged/i.test(l))?.trim() ?? login.out.split("\n")[0]?.trim();
-    return { installed: true, version: version.out.replace(/^codex-cli\s*/i, "codex "), signedIn: login.ok && !/not logged/i.test(login.out), detail: line };
+    // "Logged in using ChatGPT" → "ChatGPT"
+    const how = /logged in using (.+)/i.exec(line ?? "")?.[1]?.trim();
+    return { installed: true, version: version.out.replace(/^codex-cli\s*/i, ""), signedIn: login.ok && !/not logged/i.test(login.out), detail: how ?? line };
   }
 
   protected build<T extends z.ZodType>(opts: AskOptions<T>, scratch: Scratch): CliCall {
@@ -122,7 +124,7 @@ export function codexArgs(opts: AskOptions<z.ZodType> & { cwd: string }, schemaF
  */
 export function codexPrompt(system: string, prompt: string, tools: "none" | "read"): string {
   const reading = tools === "read"
-    ? "You may read files in the current folder (read-only commands such as cat, sed -n, rg, ls). Never try to change anything."
+    ? "Read files in the current folder with commands such as sed -n, rg, ls and cat: reading works, the folder is read-only and some secret files are blocked. Never try to change anything."
     : "Answer from this message only. Don't run commands or read files.";
   return `<instructions>\n${system}\n\n${reading} Your final message must be only the JSON answer.\n</instructions>\n\n${prompt}`;
 }
