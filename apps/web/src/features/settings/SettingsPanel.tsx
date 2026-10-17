@@ -15,6 +15,8 @@ const LOCAL: { id: LocalVoiceProvider; name: string; about: string }[] = [
   { id: "kokoro", name: "Kokoro", about: "Kokoro 82M, open weights (Apache-2.0). 28 English voices, American and British." },
 ];
 const isLocal = (p: VoiceProvider): p is LocalVoiceProvider => LOCAL.some((l) => l.id === p);
+/** A voice service you can use now: a cloud one with its key saved, or a local one downloaded. */
+const usable = (s: Settings, p: VoiceProvider) => (isLocal(p) ? s.voice.local[p].state === "ready" : !!s.voice.keys[p]);
 const mb = (bytes: number) => `${Math.round(bytes / 1e6)} MB`;
 
 /**
@@ -108,16 +110,12 @@ function KeyField({ label, saved, url, onSave }: { label: string; saved: string 
   );
 }
 
-function VoicePicker({ settings, onChange }: { settings: Settings; onChange: (s: Settings) => void }) {
-  const provider = settings.voice.provider;
-  const chosen = settings.voice.voices[provider];
-  const [query, setQuery] = useState("");
+/** The provider's voices matching a search, and a preview player for them. */
+function useVoices(provider: VoiceProvider, query: string, hasKey: boolean) {
   const [list, setList] = useState<VoiceOption[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [playing, setPlaying] = useState<string | null>(null);
-  const [open, setOpen] = useState(false);
   const audio = useRef<HTMLAudioElement | null>(null);
-  const hasKey = isLocal(provider) ? settings.voice.local[provider].state === "ready" : !!settings.voice.keys[provider];
 
   useEffect(() => {
     if (!hasKey) return setList(null);
@@ -133,10 +131,7 @@ function VoicePicker({ settings, onChange }: { settings: Settings; onChange: (s:
       clearTimeout(t);
     };
   }, [provider, query, hasKey]);
-  useEffect(() => {
-    setList(null);
-    setOpen(false);
-  }, [provider]);
+  useEffect(() => setList(null), [provider]);
   useEffect(() => () => audio.current?.pause(), []);
 
   const preview = async (v: VoiceOption) => {
@@ -154,6 +149,48 @@ function VoicePicker({ settings, onChange }: { settings: Settings; onChange: (s:
       setPlaying(null);
     }
   };
+  return { list, error, setError, playing, preview };
+}
+
+/** The search box and the list of voices; picking one saves it. */
+function VoiceList({ settings, query, setQuery, voices, onPick }: { settings: Settings; query: string; setQuery: (q: string) => void; voices: ReturnType<typeof useVoices>; onPick: (s: Settings) => void }) {
+  const chosen = settings.voice.voices[settings.voice.provider];
+  const { list, error, setError, playing, preview } = voices;
+  return (
+    <>
+      <label className="set-search">
+        <Icon name="search" size={14} />
+        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search voices" aria-label="Search voices" autoFocus />
+      </label>
+      <div className="set-voice-list" role="listbox" aria-label="Voices">
+        {list === null && !error && <p className="set-hint">Loading voices…</p>}
+        {list?.length === 0 && <p className="set-hint">No voices match.</p>}
+        {list?.map((v) => (
+          <div key={v.id} className={`set-voice${v.id === chosen ? " on" : ""}`} role="option" aria-selected={v.id === chosen}>
+            <button className="set-voice-pick" onClick={() => void api.setVoice({ voice: v.id }).then((next) => (onPick(next), setQuery("")), (e: Error) => setError(e.message))}>
+              <span className="set-voice-name">{v.name}{v.own && <em>Yours</em>}</span>
+              {v.description && <span className="set-voice-desc">{v.description}</span>}
+            </button>
+            <button className="tbtn" onClick={() => void preview(v)} aria-label={`Preview ${v.name}`} title="Preview">
+              <Icon name={playing === v.id ? "stop" : "play"} size={13} weight="bold" />
+            </button>
+            <span className="set-voice-tick">{v.id === chosen && <Icon name="check" size={15} weight="bold" />}</span>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+function VoicePicker({ settings, onChange }: { settings: Settings; onChange: (s: Settings) => void }) {
+  const provider = settings.voice.provider;
+  const chosen = settings.voice.voices[provider];
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const hasKey = usable(settings, provider);
+  const voices = useVoices(provider, query, hasKey);
+  const { list, error, playing, preview } = voices;
+  useEffect(() => setOpen(false), [provider]);
 
   if (!hasKey) return <p className="set-hint">{isLocal(provider) ? "Download the voice above to choose one." : "Add the key above to choose a voice."}</p>;
   const current = list?.find((v) => v.id === chosen);
@@ -174,28 +211,63 @@ function VoicePicker({ settings, onChange }: { settings: Settings; onChange: (s:
       {error && <p className="set-error" role="alert">{error}</p>}
       {open && (
         <div className="set-drop">
-          <label className="set-search">
-            <Icon name="search" size={14} />
-            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search voices" aria-label="Search voices" autoFocus />
-          </label>
-          <div className="set-voice-list" role="listbox" aria-label="Voices">
-            {list === null && !error && <p className="set-hint">Loading voices…</p>}
-            {list?.length === 0 && <p className="set-hint">No voices match.</p>}
-            {list?.map((v) => (
-              <div key={v.id} className={`set-voice${v.id === chosen ? " on" : ""}`} role="option" aria-selected={v.id === chosen}>
-                <button className="set-voice-pick" onClick={() => void api.setVoice({ voice: v.id }).then((next) => (onChange(next), setOpen(false), setQuery("")))}>
-                  <span className="set-voice-name">{v.name}{v.own && <em>Yours</em>}</span>
-                  {v.description && <span className="set-voice-desc">{v.description}</span>}
-                </button>
-                <button className="tbtn" onClick={() => void preview(v)} aria-label={`Preview ${v.name}`} title="Preview">
-                  <Icon name={playing === v.id ? "stop" : "play"} size={13} weight="bold" />
-                </button>
-                <span className="set-voice-tick">{v.id === chosen && <Icon name="check" size={15} weight="bold" />}</span>
-              </div>
-            ))}
-          </div>
+          <VoiceList settings={settings} query={query} setQuery={setQuery} voices={voices} onPick={(next) => (onChange(next), setOpen(false))} />
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * The narrator's voice, switched from where you listen (the board's story bar): the voice services you've
+ * added a key for, and the chosen service's voices. Everything else about the narrator stays in Settings.
+ */
+export function VoiceMenu({ onChange, onClose }: { onChange: () => void; onClose: () => void }) {
+  const [s, setS] = useState<Settings | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const provider = s?.voice.provider ?? "cartesia";
+  const voices = useVoices(provider, query, !!s && usable(s, provider));
+  useEffect(() => {
+    api.settings().then(setS, (e: Error) => setError(e.message));
+  }, []);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  const update = (next: Settings) => {
+    setS(next);
+    invalidateAll();
+    onChange();
+  };
+  const pick = (p: VoiceProvider) => void api.setVoice({ provider: p }).then(update, (e: Error) => setError(e.message));
+  return (
+    <div className="set-menu" role="dialog" aria-label="Narrator voice">
+      {error && <p className="set-error" role="alert">{error}</p>}
+      {!s && !error && <p className="set-hint">Loading…</p>}
+      {s && (
+        <div className="set-menu-kinds" role="radiogroup" aria-label="Voice service">
+          {([["Cloud", "cloud", CLOUD], ["On this computer", "local", LOCAL]] as const).map(([name, icon, list]) => (
+            <div key={icon} className="set-menu-kind">
+              <span><Icon name={icon} size={13} />{name}</span>
+              <div className="set-seg">
+                {list.map((p) => {
+                  const ok = usable(s, p.id);
+                  return (
+                    <button key={p.id} role="radio" aria-checked={s.voice.provider === p.id} disabled={!ok && s.voice.provider !== p.id}
+                      title={ok ? "" : isLocal(p.id) ? "Download it in Settings first" : "Add its key in Settings first"} onClick={() => pick(p.id)}>{p.name}</button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {s && (usable(s, provider)
+        ? <VoiceList settings={s} query={query} setQuery={setQuery} voices={voices} onPick={update} />
+        : <p className="set-hint">{isLocal(provider) ? "Download the voice in Settings to choose one." : "Add a voice key in Settings to choose a voice."}</p>)}
+      {voices.error && <p className="set-error" role="alert">{voices.error}</p>}
     </div>
   );
 }

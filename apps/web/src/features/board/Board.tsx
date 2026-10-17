@@ -7,6 +7,7 @@ import { useStore } from "../../shared/state/store.ts";
 import { openCode, toHtml } from "../code/index.ts";
 import { timeLeft, useNow, useProgress } from "../jobs/index.ts";
 import { Icon, ThemeButton } from "../../shared/ui/index.ts";
+import { VoiceMenu } from "../settings/index.ts";
 import { Chat } from "./Chat.tsx";
 import { loadProgress, saveProgress } from "./progress.ts";
 import { Said } from "./Said.tsx";
@@ -112,6 +113,7 @@ function BoardView({ id, board, job, repoName, onHome, onSettings }: { id: strin
   const { data: voice } = useQuery("voice-status", api.voice);
   const speak = voiceOn && !!voice?.available;
   const [chat, setChat] = useState(false);
+  const [voiceMenu, setVoiceMenu] = useState(false);
   // A "Why?" from the tour: the question it asked, and whether the tour was playing when it was asked.
   const [why, setWhy] = useState<{ q: string; was: boolean } | null>(null);
   const live = useRef({ rate, speak, chat });
@@ -205,6 +207,16 @@ function BoardView({ id, board, job, repoName, onHome, onSettings }: { id: strin
     setChat(true);
   };
 
+  // A click outside the voice menu (or on its button again) closes it.
+  useEffect(() => {
+    if (!voiceMenu) return;
+    const down = (ev: PointerEvent) => {
+      if (!(ev.target as Element).closest?.(".set-menu, .bd-voice-more")) setVoiceMenu(false);
+    };
+    document.addEventListener("pointerdown", down);
+    return () => document.removeEventListener("pointerdown", down);
+  }, [voiceMenu]);
+
   const e = engine.current;
   // A reveal shows what it rests on: its label and lines, under the caption.
   const said = es?.beat ? board.steps[es.step]?.beats[es.beat.i] : null;
@@ -227,6 +239,7 @@ function BoardView({ id, board, job, repoName, onHome, onSettings }: { id: strin
         <button onClick={() => void e?.fit()} aria-label="Reset: fit the board (F)" title="Reset: fit the board (F)"><Icon name="fit" size={13} /></button>
       </div>
 
+      {voiceMenu && <div className="bd-voice-menu"><VoiceMenu onChange={() => e?.voiceChanged()} onClose={() => setVoiceMenu(false)} /></div>}
       {chat && es && e && <Chat board={board} es={es} engine={e} onClose={closeChat} ask={why?.q} backToTour={!!why} />}
       {/* The story bar: one place for what's being said, where you are, and what you can do next. */}
       <div className="bd-fl bd-bar">
@@ -257,6 +270,7 @@ function BoardView({ id, board, job, repoName, onHome, onSettings }: { id: strin
             aria-pressed={speak}
             title={!voice ? "" : voice.available ? (voiceOn ? "Mute the narrator" : "Hear the narrator") : voice.reason}
           ><Icon name={speak ? "sound" : "muted"} size={18} /></button>
+          <button className={`bd-voice-more${voiceMenu ? " on" : ""}`} onClick={() => setVoiceMenu((o) => !o)} aria-expanded={voiceMenu} aria-haspopup="dialog" aria-label="Choose the narrator's voice" title="Choose the narrator's voice"><Icon name="chevron" size={13} /></button>
           <button className={`bd-ask${chat ? " on" : ""}`} onClick={() => (chat ? closeChat() : setChat(true))} aria-pressed={chat} aria-label="Ask Docent" title="Ask Docent about this board (/)">
             <Icon name="ask" size={16} /><span className="bd-ask-t">Ask</span>
           </button>

@@ -1,1 +1,1 @@
-export { SettingsPanel } from "./SettingsPanel.tsx";
+export { SettingsPanel, VoiceMenu } from "./SettingsPanel.tsx";
