@@ -1,0 +1,11 @@
+# Docent
+
+Read `docs/design.md` (what and why) and `docs/roadmap.md` (how, milestone by milestone) before working here.
+
+## Rules
+
+- **No AI attribution.** Never add Codex (or any AI) as a co-author, collaborator or contributor. No `Co-Authored-By:` trailers, no "Generated with Codex" lines, no AI credit in commit messages, PR descriptions, changelogs, file headers or docs.
+- Commit only when asked.
+- Never write to an analyzed repo. Docent's own outputs live in `~/.docent/repos/<repo>/`.
+- Keep the feature-based structure: `app → features → shared`, one `index.ts` per feature.
+- Every claim shown to the user carries evidence and a label (confirmed, ran it, inferred, unknown, record).
