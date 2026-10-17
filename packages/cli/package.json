@@ -1,5 +1,5 @@
 {
-  "name": "@whytepeter/docent",
+  "name": "docent-cli",
   "version": "0.1.0",
   "description": "Guided, narrated tours of your codebase, with evidence for every claim. Runs locally on your own Claude Code or Codex.",
   "keywords": [

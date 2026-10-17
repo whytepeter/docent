@@ -16,15 +16,15 @@ Every claim Docent shows carries evidence (the file and lines it came from) and 
 From the project you want to understand:
 
 ```bash
-npx @whytepeter/docent
+npx docent-cli
 ```
 
-Docent reads the code, opens in your browser at `http://127.0.0.1:4477` and shows what the project does and the flows worth learning. You can also give it a path (`npx @whytepeter/docent ~/code/my-app`), or open a GitHub link or a `.zip` from the welcome page.
+Docent reads the code, opens in your browser at `http://127.0.0.1:4477` and shows what the project does and the flows worth learning. You can also give it a path (`npx docent-cli ~/code/my-app`), or open a GitHub link or a `.zip` from the welcome page.
 
 To install it once and use `docent` everywhere:
 
 ```bash
-npm install -g @whytepeter/docent
+npm install -g docent-cli
 ```
 
 ### What it needs
