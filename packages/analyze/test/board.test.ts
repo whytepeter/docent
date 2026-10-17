@@ -19,46 +19,82 @@ beforeAll(() => {
 });
 
 type Spec = Parameters<typeof cleanBoard>[0];
-type SpecBeat = Spec["steps"][number]["beats"][number];
+type SpecStep = Spec["steps"][number];
+type SpecBeat = SpecStep["beats"][number];
 const claim = (text: string) => ({ text, label: "confirmed" as const, evidence: [], commit: "", searched: "" });
-const beat = (b: Partial<SpecBeat> & Pick<SpecBeat, "kind">): SpecBeat => ({ text: "words", tone: "calm", lines: [], choices: [], claim: null, ...b });
+const beat = (b: Partial<SpecBeat> & Pick<SpecBeat, "kind">): SpecBeat => ({ text: "words", tone: "calm", lines: [], values: [], claim: null, ...b });
+const step = (s: Partial<SpecStep>): SpecStep => ({ part: "flow", card: "up", route: [], hops: [], beats: [beat({ kind: "say" })], ...s });
 
-function spec(beats: SpecBeat[]): Spec {
+function spec(steps: SpecStep[]): Spec {
   return {
     title: "t", intro: "i", pitch: "p",
-    cards: [{ id: "up", title: "Upload", file: "src/lib/upload.ts", start: 1, end: 4, hot: [2], role: "r", why: claim("w"), say: claim("s") }],
-    edges: [],
-    steps: [{ card: "up", route: [], beats }],
-    tryIt: { intro: "", scenarios: [], toggles: [] },
-    defend: [],
+    cards: [
+      { id: "page", title: "Page", file: "src/ui/Page.tsx", start: 1, end: 3, hot: [], role: "r", why: claim("w"), say: claim("s") },
+      { id: "up", title: "Upload", file: "src/lib/upload.ts", start: 1, end: 4, hot: [2], role: "r", why: claim("w"), say: claim("s") },
+    ],
+    edges: [{ from: "page", to: "up", label: "files" }],
+    steps,
   };
 }
 
-describe("board tour beats", () => {
+describe("board tour", () => {
   it("keeps sound beats and turns unsound ones into plain talk", () => {
-    const b = cleanBoard(spec([
-      beat({ kind: "point", lines: [2, 99] }),
-      beat({ kind: "point", lines: [99] }),
-      beat({ kind: "predict", text: "Which?", choices: [{ text: "a", correct: true }, { text: "b", correct: false }] }),
-      beat({ kind: "predict", text: "Two right?", choices: [{ text: "a", correct: true }, { text: "b", correct: true }] }),
-      beat({ kind: "predict", text: "Where?", lines: [3] }),
-      beat({ kind: "reveal", text: "", claim: claim("Because.") }),
-      beat({ kind: "reveal", text: "No claim" }),
-      beat({ kind: "say", text: "  " }),
-    ]), facts, root, "f", "m");
+    const b = cleanBoard(spec([step({
+      beats: [
+        beat({ kind: "point", lines: [2, 99], values: [{ line: 2, text: " size = 3 MB " }, { line: 99, text: "off the card" }] }),
+        beat({ kind: "point", lines: [99] }),
+        beat({ kind: "ask", text: "Why?", tone: "calm" }),
+        beat({ kind: "reveal", text: "", lines: [3], claim: claim("Because.") }),
+        beat({ kind: "reveal", text: "No claim" }),
+        beat({ kind: "say", text: "  " }),
+      ],
+    })]), facts, root, "f", "m");
     const beats = b.steps[0]!.beats;
-    expect(beats.map((x) => x.kind)).toEqual(["point", "say", "predict", "say", "predict", "reveal", "say"]);
+    expect(beats.map((x) => x.kind)).toEqual(["point", "say", "ask", "reveal", "say"]);
     expect(beats[0]!.lines).toEqual([2]);
-    expect(beats[4]!.lines).toEqual([3]);
-    expect(beats[5]!.text).toBe("Because.");
-    expect(b.version).toBe(2);
-    expect(b.notes.length).toBe(3);
+    expect(beats[0]!.values).toEqual([{ line: 2, text: "size = 3 MB" }]);
+    expect(beats[2]!.tone).toBe("curious");
+    expect(beats[3]).toMatchObject({ text: "Because.", lines: [3] });
+    expect(b.version).toBe(3);
   });
 
-  it("upgrades a board written before beats: each narration becomes one beat", () => {
-    const old = { version: 1, steps: [{ card: "", route: [], text: "Why does it retry?" }] } as unknown as Board;
-    const up = upgradeBoard(old);
-    expect(up.version).toBe(2);
-    expect(up.steps[0]!.beats).toEqual([{ kind: "say", text: "Why does it retry?", tone: "curious", lines: [], choices: [], claim: null }]);
+  it("keeps a failure only with a path along the board's links, and a why only with a card", () => {
+    const hop = (edge: string) => ({ edge, back: false, stat: "500", tone: "bad" as const });
+    const b = cleanBoard(spec([
+      step({ part: "fail", hops: [hop("page>up")] }),
+      step({ part: "fail", hops: [hop("up>nowhere")] }),
+      step({ part: "why", card: "" }),
+      step({ part: "flow", route: ["page>up", "up>page"] }),
+    ]), facts, root, "f", "m");
+    expect(b.steps.map((s) => s.part)).toEqual(["fail", "flow", "close", "flow"]);
+    expect(b.steps[0]!.hops).toHaveLength(1);
+    expect(b.steps[3]!.route).toEqual(["page>up"]);
+  });
+
+  it("upgrades an older board: guesses become questions it answers, Try it and Defend it become tour steps", () => {
+    const old = {
+      version: 2, cards: [], edges: [], notes: [], title: "t", intro: "i", pitch: "p", flowId: "f", generatedAt: "", model: "", status: "checked",
+      steps: [
+        { card: "", route: [], beats: [{ kind: "say", text: "Picture this.", tone: "calm", lines: [], choices: [], claim: null }] },
+        { card: "up", route: [], beats: [
+          { kind: "predict", text: "Where does it stall?", tone: "curious", lines: [81], choices: [], claim: null },
+          { kind: "reveal", text: "The watchdog.", tone: "emphatic", lines: [], choices: [], claim: claim("The watchdog.") },
+        ] },
+        { card: "", route: [], text: "Now you can say it." },
+      ],
+      tryIt: { intro: "", toggles: [], scenarios: [
+        { label: "Send a valid upload", hops: [{ edge: "page>up", back: false, stat: "ok", tone: "ok" }], result: claim("fine") },
+        { label: "Storage refuses", hops: [{ edge: "page>up", back: false, stat: "500", tone: "bad" }], result: claim("It fails.") },
+      ] },
+      defend: [{ q: "Why one retry?", card: "up", lines: [3], answer: claim("To bound it."), breaks: "Loops forever." }],
+    } as unknown as Board;
+    const b = upgradeBoard(old);
+    expect(b.version).toBe(3);
+    expect(b.steps.map((s) => s.part)).toEqual(["intro", "flow", "fail", "why", "close"]);
+    expect(b.steps[1]!.beats.map((x) => [x.kind, x.lines])).toEqual([["ask", []], ["reveal", [81]]]);
+    expect(b.steps[2]).toMatchObject({ card: "up", beats: [{ kind: "say", text: "Here's one that goes wrong: Storage refuses." }, { kind: "reveal", text: "It fails." }] });
+    expect(b.steps[3]!.beats.map((x) => x.text)).toEqual(["Why one retry?", "To bound it.", "Without it: Loops forever."]);
+    expect(b.steps[4]!.beats[0]!.text).toBe("Now you can say it.");
+    expect("tryIt" in b || "defend" in b).toBe(false);
   });
 });

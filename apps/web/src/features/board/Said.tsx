@@ -2,7 +2,7 @@ import type { Board } from "@docent/contracts";
 import { openCode } from "../code/index.ts";
 import { LABEL } from "./engine.ts";
 
-type Claim = Board["defend"][number]["answer"];
+type Claim = Board["cards"][number]["why"];
 
 const SHORT: Record<string, string> = { confirmed: "confirmed", inferred: "inferred", unknown: "unknown", record: "record" };
 

@@ -14,7 +14,7 @@ docent/
 │   │       ├── app/            shell: two routes (#/ home, #/board/<id>), settings, repo switch
 │   │       ├── features/
 │   │       │   ├── home/           what the project does, then its flows as cards
-│   │       │   ├── board/          one flow's whiteboard: camera, tour, Try it, Defend it, chat, tray
+│   │       │   ├── board/          one flow's whiteboard: camera, the guided tour, chat, tray
 │   │       │   ├── ask/            chat threads and streaming answers (used by the board's chat)
 │   │       │   ├── code/           code sheet and excerpts with highlighted lines (Shiki)
 │   │       │   ├── jobs/           background job state and the job pill
@@ -213,14 +213,27 @@ Checked with a stand-in voice in the browser; not yet with Cartesia itself. To h
 - Providers only ever receive narration text, never code. Keys come only from the environment.
 
 ### M5.5: The board is the app ✅
-The map-and-inspector screens gave way to one idea: pick a flow of the codebase, and Docent draws it as a whiteboard from the real code, to tour, break and defend.
+The map-and-inspector screens gave way to one idea: pick a flow of the codebase, and Docent draws it as a whiteboard from the real code and takes you through it.
 - **Flows** (`packages/analyze/src/board.ts`): `proposeFlows` (about 25 s) suggests the flows worth learning; `writeBoard` (about 2 min) draws one as cards, links and a tour; `citeBoard` runs the citation check on every card (instant); `checkBoard` is the second reader, running behind the open board.
 - **Home** (`features/home`): what the project does (`packages/analyze/src/overview.ts`, cited and double-checked, cached in `overview.json`), then the flow cards tagged Ready, Drawing, or not drawn yet.
-- **Board** (`features/board`): a plain-DOM camera on a FigJam dot canvas with a zoom pill (+, −, fit). The Tour narrates step by step; Try it and Defend it test the learner; `pointAt` frames any card or line. Claims, labels and line references render as chips (`Said.tsx`).
+- **Board** (`features/board`): a plain-DOM camera on a FigJam dot canvas with a zoom pill (+, −, fit). The tour narrates step by step; `pointAt` frames any card or line. Claims, labels and line references render as chips (`Said.tsx`).
 - **Ask Docent on the board:** the Ask button or `/`. The chat is scoped to the tour step and reuses `/api/ask` with `Route { view: "board" }`. Answers go through the citation check and the second reader, and the board opens the cited card on the cited lines.
 - **Background drawing:** boards draw as server jobs. A tray (bottom left) shows progress, says when one is ready with an open button, and its × cancels, hides or stops. `POST /api/boards/:id/stop` aborts the Claude run.
 - **Look and feel:** light, dark and system theme from one cycling button (`data-theme` on `<html>`); Lucide icons; Atkinson Hyperlegible Next with Geist Mono for code; the Lucide `Presentation` mark with a lowercase "docent" wordmark; responsive at 375 px and 768 px.
 - **Tidy-up:** the old screens (system map, navigator, area, file, function and feature views, feature review, episode player, search, health badge, freshness) and the React Flow and ELK diagram layer were removed from the app, along with `@xyflow/react`, `elkjs`, `motion` and Phosphor. Their server routes and CLI commands remain.
+
+**One guided tour (Oct 17, user decision).** Docent takes you through your code; it doesn't test you or set homework. A hands-on exercise ("Do it") was built and removed, and the board's tabs went with it:
+- The board is one tour in five parts: **intro** (one concrete request and the question the tour answers), **flow** (one step per card, following that request), **when it goes wrong** (the packet runs the path a failure really takes, each card shows its status, then the code that decides it), **why it's built this way** (a reviewer's question, answered with evidence), and **close** (the one sentence to say out loud).
+- Each step is beats: **say**, **point** (a marker stroke on 1–3 lines while it's said, the camera leaning in), **ask** (the question a newcomer would have; Docent answers it itself after a moment) and **reveal** (the answer, with its label and evidence under the caption). A card's notes wait until its step is told.
+- Try it's failure scenarios and Defend it's questions became tour steps; boards written before this are upgraded on load, keeping their checked claims.
+
+**The tour, improved (Oct 17):**
+- **Drawn as it goes.** The board starts empty under its title note. Each step first draws the arrow the request travels along, then wipes in the card it reaches, then sends the packet in. Jumping shows the board as it is at that step at once; going back takes away what the story hasn't reached.
+- **The example's values on the code.** Point and reveal beats can write what the intro's example request holds at a line ("file.size = 3 MB → passes") beside it, so a step reads as a trace of one real request.
+- **Why?** beside the caption pauses the tour and asks Docent about the sentence on screen; the answer is checked and pointed at on the board, and "Back to the tour" restarts the step, playing on if it was.
+- **Narration per beat** with a real voice (Cartesia): words appear on the audio's clock, the next beat's clip is fetched ahead, and a question gets a short pause before its answer.
+- **Progress** is kept per tour in the browser: the board opens where you stopped, and home says "stopped at step 4 of 14" or "watched".
+- While playing, a card's "Why" and "Say it" notes are given time to be read; the open card sits above the cards it grows over.
 
 **Backlog:** a stop button on the board's own drawing screen; chat answers kept across reloads.
 

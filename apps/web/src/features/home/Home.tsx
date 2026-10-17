@@ -2,12 +2,16 @@ import { type ReactNode, useEffect, useState } from "react";
 import type { FlowsState, Job, ProjectOverview } from "@docent/contracts";
 import { api } from "../../shared/api/client.ts";
 import { Icon, Logo, ThemeButton } from "../../shared/ui/index.ts";
-import { Said } from "../board/index.ts";
+import { loadProgress, Said, type Progress } from "../board/index.ts";
 import { timeLeft, useNow, useProgress } from "../jobs/index.ts";
 import "../board/board.css";
 import "./home.css";
 
 const running = (j: Job | null | undefined): j is Job => !!j && !j.finishedAt;
+
+/** Where you are in a drawn tour: not started, stopped part-way, or watched. */
+const progressLine = (p: Progress | null) =>
+  !p || (p.step === 0 && !p.done) ? "ready to tour" : p.done ? "watched · tour it again" : `stopped at step ${p.step + 1} of ${p.steps} · pick up there`;
 
 /**
  * The start: what the project does, then the flows worth a whiteboard. Both are written the first time a
@@ -71,7 +75,7 @@ export function Home({ repoName, switcher, onOpen, onBack, onSettings }: { repoN
 
         {state && <section className="bd-home-flows" aria-labelledby="bd-flows-h">
           <h2 id="bd-flows-h">What do you want to understand?</h2>
-          <p className="bd-home-sub">Pick a flow. Docent draws it on a whiteboard from the real code: follow one request through it, break it on purpose, then defend how it's built.</p>
+          <p className="bd-home-sub">Pick a flow. Docent draws it on a whiteboard from the real code and takes you through it: one request from start to end, what happens when it goes wrong, and why it is built that way.</p>
           {failed && (
             <p className="bd-home-err">
               Couldn't find the flows: {state?.job?.error}{" "}
@@ -94,7 +98,7 @@ export function Home({ repoName, switcher, onOpen, onBack, onSettings }: { repoN
                   <span>{f.summary}</span>
                   <em>
                     {f.files.length} files ·{" "}
-                    {ready.has(f.id) ? "open the tour, try it, defend it" : drawing.has(f.id) ? `drawing now · ${timeLeft(drawing.get(f.id)!, now) || "almost done"}` : "not drawn yet · about 2 min"}
+                    {ready.has(f.id) ? progressLine(loadProgress(repoName, f.id)) : drawing.has(f.id) ? `drawing now · ${timeLeft(drawing.get(f.id)!, now) || "almost done"}` : "not drawn yet · about 2 min"}
                   </em>
                 </span>
                 {ready.has(f.id) && <span className="bd-home-ready"><Icon name="check" size={12} weight="bold" />Ready</span>}

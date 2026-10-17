@@ -26,7 +26,7 @@ const go = (hash: string) => {
   if (window.location.hash !== hash) window.location.hash = hash;
 };
 
-/** Docent is a whiteboard: pick a flow of the codebase, and it's drawn from the real code to tour, break and defend. */
+/** Docent is a whiteboard: pick a flow of the codebase, and it's drawn from the real code and Docent takes you through it. */
 export function App() {
   const workspace = useQuery("workspace", api.workspace);
   const route = useRoute();

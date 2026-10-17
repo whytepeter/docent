@@ -8,49 +8,27 @@ import type { Board, VoiceClip } from "@docent/contracts";
 type Claim = Board["cards"][number]["why"];
 type Step = Board["steps"][number];
 export type Beat = Step["beats"][number];
-export type Mode = "tour" | "try" | "defend";
-/** Where the learner pointed for a Defend question: the exact lines, the right card, or elsewhere. */
-export type Pick = "line" | "card" | "miss";
-
-/**
- * A tour guess: Docent asked (beat `beat` of step `step`) and waits. The answer is the choice the learner
- * picked, or where they pointed; ok is null when they skipped to the answer.
- */
-export interface Quiz {
-  step: number;
-  beat: number;
-  answer: { choice: number | null; ok: boolean | null } | null;
-}
-
 export interface Insets { t: number; b: number; l: number; r: number }
 
 export interface EngineState {
-  mode: Mode;
   step: number;
   steps: number;
   playing: boolean;
-  /** The tour beat playing now (say, point, predict, reveal). */
+  /** The tour beat playing now (say, point, ask, reveal). */
   beat: { i: number; kind: Beat["kind"] } | null;
-  quiz: Quiz | null;
   zoom: number;
-  toggles: Record<string, boolean>;
-  /** Defend it: the question on screen, whether its answer is showing, and where the learner pointed. */
-  ask: { i: number; revealed: boolean; pick: Pick | null };
-  picks: Record<number, Pick>;
-  defended: Record<number, "yes" | "rev">;
 }
 
 export interface Saved {
   pos?: Record<string, { x: number; y: number }>;
   notes?: { id: string; x: number; y: number; text: string; color: string; r: number }[];
-  defended?: Record<number, "yes" | "rev">;
 }
 
 export interface EngineOptions {
   caption: { title: HTMLElement; text: HTMLElement };
   onState: (s: EngineState) => void;
-  /** How much of each edge the floating controls cover, for this mode. */
-  insets: (mode: Mode) => Insets;
+  /** How much of each edge the floating controls cover. */
+  insets: () => Insets;
   rate: () => number;
   /** A voice clip for one beat of a tour step, or null to read without one. */
   voice: (at: number, beat: number) => Promise<VoiceClip | null>;
@@ -59,6 +37,8 @@ export interface EngineOptions {
   openCode: (file: string, start?: number, end?: number) => void;
   saved: Saved;
   persist: (s: Saved) => void;
+  /** The step to open on: where you stopped last time. */
+  startAt?: number;
 }
 
 const W = 520;
@@ -81,6 +61,21 @@ const ease = (p: number) => (p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 
 const ease2 = (p: number) => (p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2);
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
+/**
+ * The step at which the tour first reaches each card: its own step, or a route or failure path through it.
+ * A card no step mentions is drawn with the first card, so nothing on the board is left out.
+ */
+function reachOf(b: Board): Map<string, number> {
+  const reach = new Map<string, number>();
+  b.steps.forEach((s, i) => {
+    const ids = [...s.route, ...s.hops.map((h) => h.edge)].flatMap((e) => e.split(">"));
+    for (const id of [...ids, s.card].filter(Boolean)) if (!reach.has(id)) reach.set(id, i);
+  });
+  const first = Math.min(...reach.values(), b.steps.length - 1);
+  for (const c of b.cards) if (!reach.has(c.id)) reach.set(c.id, first);
+  return reach;
+}
+
 interface CardEl {
   data: Board["cards"][number];
   root: HTMLDivElement;
@@ -91,11 +86,10 @@ interface CardEl {
   say: HTMLDivElement;
   x: number;
   y: number;
-  /** The excerpt as shown (a switch can change one line). */
+  /** The excerpt as shown. */
   cur: string[];
   html: string[] | null;
   typed: boolean;
-  changed: Set<number>;
 }
 
 export class BoardEngine {
@@ -104,7 +98,6 @@ export class BoardEngine {
   private cam = { x: 0, y: 0, k: 0.5 };
   private cards = new Map<string, CardEl>();
   private edges = new Map<string, { path: SVGPathElement; label: SVGTextElement; from: string; to: string }>();
-  private launcher: HTMLDivElement | null = null;
   private tok = 0;
   private flyId = 0;
   private paused = false;
@@ -115,16 +108,17 @@ export class BoardEngine {
   /** The card whose code is typing right now; opening all code leaves it to finish. */
   private typingId: string | null = null;
   private s: EngineState;
+  /** The step at which the tour first reaches each card: it's drawn on the board from then on. */
+  private reach = new Map<string, number>();
+  /** Cards drawn on the board right now, and the step they were drawn up to. */
+  private drawn = new Set<string>();
+  private drawnStep = -1;
   private frame1 = { x: 0, y: 0, w: 0, h: 0 };
 
   private cleanup: (() => void)[] = [];
 
   constructor(private stage: HTMLDivElement, private board: Board, private o: EngineOptions) {
-    this.s = {
-      mode: "tour", step: 0, steps: board.steps.length, playing: false, beat: null, quiz: null, zoom: 0.5,
-      toggles: Object.fromEntries(board.tryIt.toggles.map((t) => [t.id, true])),
-      ask: { i: 0, revealed: false, pick: null }, picks: {}, defended: { ...(o.saved.defended ?? {}) },
-    };
+    this.s = { step: 0, steps: board.steps.length, playing: false, beat: null, zoom: 0.5 };
     this.world = document.createElement("div");
     this.world.className = "bd-world";
     this.svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -137,7 +131,7 @@ export class BoardEngine {
     this.fit(0);
     void document.fonts?.ready.then(() => this.drawEdges());
     this.emit();
-    void this.runStep(0, false);
+    void this.runStep(clamp(o.startAt ?? 0, 0, Math.max(0, board.steps.length - 1)), false);
   }
 
   /** New labels from the double-check behind the board: refresh the notes without restarting anything. */
@@ -175,7 +169,7 @@ export class BoardEngine {
     const notes = [...this.world.querySelectorAll<HTMLDivElement>(".bd-sticky.mine")].map((n) => ({
       id: n.dataset.id!, x: n.offsetLeft, y: n.offsetTop, text: n.querySelector(".bd-st-text")?.textContent ?? "", color: n.dataset.c ?? "", r: Number(n.dataset.r ?? 0),
     }));
-    this.o.persist({ pos, notes, defended: this.s.defended });
+    this.o.persist({ pos, notes });
   }
 
   /** Waits, but stands still while the learner has paused. */
@@ -216,7 +210,7 @@ export class BoardEngine {
   }
 
   private fitRect(R: { x: number; y: number; w: number; h: number }) {
-    const i = this.o.insets(this.s.mode);
+    const i = this.o.insets();
     const vw = this.stage.clientWidth;
     const vh = this.stage.clientHeight;
     const aw = Math.max(200, vw - i.l - i.r);
@@ -265,7 +259,8 @@ export class BoardEngine {
   }
   fit(ms = 900) {
     const R = this.frame1;
-    return this.flyTo(this.fitRect({ x: R.x + 40, y: R.y + 40, w: R.w - 80, h: R.h - 80 }), ms);
+    // The title note sits above the frame's top edge; keep it in view.
+    return this.flyTo(this.fitRect({ x: R.x + 40, y: R.y - 60, w: R.w - 80, h: R.h + 20 }), ms);
   }
   private cardRect(c: CardEl) {
     const h = 116 + c.cur.length * LINE + 24 + 190;
@@ -319,9 +314,9 @@ export class BoardEngine {
     this.frame1 = { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
     this.mkFrame(this.frame1, b.title);
 
-    // Try it lives on the board: scenarios start where the request starts.
-    const first = this.cards.get(order[0] ?? "") ?? xs[0];
-    if (first) this.mkLauncher(first);
+    this.reach = reachOf(b);
+    for (const c of this.cards.values()) c.root.classList.add("undrawn");
+    for (const e of this.edges.values()) (e.path.classList.add("undrawn"), e.label.classList.add("undrawn"));
     for (const n of this.o.saved.notes ?? []) this.sticky({ x: n.x, y: n.y, text: n.text, c: n.color, r: n.r, mine: true, id: n.id });
   }
 
@@ -373,7 +368,7 @@ export class BoardEngine {
     this.world.appendChild(root);
     const el: CardEl = {
       data: c, root, head: root.querySelector(".bd-head")!, code: root.querySelector(".bd-code")!, stat: root.querySelector(".bd-stat")!,
-      why, say, x, y, cur: c.lines.slice(), html: null, typed: false, changed: new Set(),
+      why, say, x, y, cur: c.lines.slice(), html: null, typed: false,
     };
     this.cards.set(c.id, el);
     void this.o.highlight(c.lines, c.file, c.start).then((h) => {
@@ -383,7 +378,7 @@ export class BoardEngine {
   }
 
   private hotFor(c: CardEl) {
-    return this.s.mode === "tour" ? c.data.hot : [];
+    return c.data.hot;
   }
 
   private mkEdge(from: string, to: string, label: string) {
@@ -468,15 +463,11 @@ export class BoardEngine {
   // ---------------------------------------------------------------- code
 
   private lineHtml(c: CardEl, i: number, cls: string) {
-    const changed = c.changed.has(i);
-    const body = !changed && c.html?.[i] ? c.html[i] : esc(c.cur[i] ?? "");
-    // A safety switch sits on the very line it turns off (shown in Try it).
-    const t = this.board.tryIt.toggles.find((x) => x.card === c.data.id && x.line === c.data.start + i);
-    const sw = t ? `<button class="bd-ln-sw" data-t="${esc(t.id)}" role="switch" aria-checked="${!changed}" title="${esc(t.label)}: ${esc(t.detail)}"><span>${esc(t.label)}</span><b></b></button>` : "";
-    return `<div class="bd-ln ${cls}${t ? " has-sw" : ""}" data-i="${i}"><i>${c.data.start + i}</i><span>${body || " "}</span>${sw}</div>`;
+    const body = c.html?.[i] ?? esc(c.cur[i] ?? "");
+    return `<div class="bd-ln ${cls}" data-i="${i}"><i>${c.data.start + i}</i><span>${body || " "}</span></div>`;
   }
   private renderCode(c: CardEl, hot: number[]) {
-    c.code.innerHTML = c.cur.map((_, i) => this.lineHtml(c, i, `${hot.includes(c.data.start + i) ? "hot " : ""}${c.changed.has(i) ? "chg" : ""}`)).join("");
+    c.code.innerHTML = c.cur.map((_, i) => this.lineHtml(c, i, hot.includes(c.data.start + i) ? "hot" : "")).join("");
   }
   /** Types the code in, line by line; a click on the card finishes it at once. */
   private async typeCode(c: CardEl, tok: number, hot: number[]) {
@@ -700,7 +691,6 @@ export class BoardEngine {
     void this.runStep(clamp(i, 0, this.board.steps.length - 1), false);
   }
   play() {
-    if (this.s.mode !== "tour") return;
     if (this.s.playing) {
       this.paused = !this.paused;
       if (!this.paused) this.audio?.play().catch(() => {});
@@ -712,38 +702,123 @@ export class BoardEngine {
     this.set({ playing: true });
     void this.runStep(this.s.step >= this.board.steps.length - 1 ? 0 : this.s.step, true);
   }
+  /** Holds the tour where it is (for a question); true if it was playing. */
+  hold(): boolean {
+    const was = this.s.playing && !this.paused;
+    if (was) {
+      this.paused = true;
+      this.audio?.pause();
+      this.emit();
+    }
+    return was;
+  }
+  /** Back to the tour after a question: the step you were on, from its start, playing on if it was. */
+  resume(play: boolean) {
+    this.paused = false;
+    this.set({ playing: play });
+    void this.runStep(this.s.step, play);
+  }
   isPaused() {
     return this.s.playing && this.paused;
   }
 
+  // ---------------------------------------------------------------- drawing
+
   /**
-   * One tour step, taught beat by beat: the camera goes to the card (a packet carries the request there),
-   * the code types in, then Docent talks, points at lines, asks for a guess and waits, and gives the answer.
-   * The card's notes come last, so they never give an answer away before it's asked.
+   * The board as it should look at step `i`: every card the tour has reached by then, and the arrows between
+   * them. Moving on by one step draws what's new, an arrow into a card and then the card, the way you'd draw
+   * on a whiteboard; a jump (or reduced motion) just shows the result. Cards not reached yet aren't there.
+   */
+  private async drawUpTo(i: number, tok: number): Promise<void> {
+    const animate = i === this.drawnStep + 1 && !rm();
+    this.drawnStep = i;
+    const want = new Set([...this.cards.keys()].filter((id) => (this.reach.get(id) ?? 0) <= i));
+    for (const id of this.drawn) if (!want.has(id)) this.eraseCard(id);
+    const fresh = [...want].filter((id) => !this.drawn.has(id)).sort((a, b) => (this.reach.get(a) ?? 0) - (this.reach.get(b) ?? 0));
+    for (const id of fresh) {
+      if (animate && tok !== this.tok) return this.drawUpTo(i, -1);
+      const into = [...this.edges.values()].filter((e) => e.to === id && this.drawn.has(e.from));
+      const out = [...this.edges.values()].filter((e) => e.from === id && this.drawn.has(e.to));
+      await Promise.all(into.map((e) => this.drawEdge(e, animate ? 450 : 0)));
+      await this.drawCard(id, animate ? 650 : 0);
+      await Promise.all(out.map((e) => this.drawEdge(e, animate ? 450 : 0)));
+    }
+    // Links between cards drawn earlier (a jump back and forth) come back too.
+    for (const e of this.edges.values()) if (this.drawn.has(e.from) && this.drawn.has(e.to)) void this.drawEdge(e, 0);
+  }
+  private drawCard(id: string, ms: number): Promise<void> {
+    const c = this.cards.get(id);
+    if (!c) return Promise.resolve();
+    this.drawn.add(id);
+    c.root.classList.remove("undrawn");
+    if (!ms) return Promise.resolve();
+    c.root.style.setProperty("--draw-ms", `${ms}ms`);
+    c.root.classList.add("drawing-in");
+    return new Promise((res) => setTimeout(() => (c.root.classList.remove("drawing-in"), res()), ms));
+  }
+  private eraseCard(id: string) {
+    const c = this.cards.get(id);
+    if (!c) return;
+    this.drawn.delete(id);
+    this.closeCard(id);
+    c.root.classList.add("undrawn");
+    for (const e of this.edges.values()) if (e.from === id || e.to === id) (e.path.classList.add("undrawn"), e.label.classList.add("undrawn"));
+  }
+  /** An arrow drawn along its length as a solid stroke, settling back to the board's dashed line. */
+  private drawEdge(e: { path: SVGPathElement; label: SVGTextElement }, ms: number): Promise<void> {
+    if (!e.path.classList.contains("undrawn")) return Promise.resolve();
+    e.path.classList.remove("undrawn");
+    e.label.classList.remove("undrawn");
+    if (!ms) return Promise.resolve();
+    const len = e.path.getTotalLength();
+    const dash = `${len} ${len}`;
+    e.label.animate([{ opacity: 0 }, { opacity: 1 }], { duration: ms, delay: ms * 0.6, fill: "backwards" });
+    return e.path.animate([{ strokeDasharray: dash, strokeDashoffset: len, opacity: 1 }, { strokeDasharray: dash, strokeDashoffset: 0, opacity: 1 }], { duration: ms, easing: "ease-in-out" })
+      .finished.then(() => undefined, () => undefined);
+  }
+
+  /**
+   * One tour step, told beat by beat: the camera goes to the card (a packet carries the request there, or,
+   * when something goes wrong, along the path it really takes), the code types in, then Docent talks,
+   * points at lines, and asks the questions a newcomer would, answering each itself after a moment.
    */
   private async runStep(i: number, auto: boolean) {
     const tok = ++this.tok;
     this.flyId++;
     this.audio?.pause();
-    this.set({ step: i, beat: null, quiz: null });
+    this.set({ step: i, beat: null });
     this.clearEdges();
     this.world.querySelectorAll(".bd-packet").forEach((p) => p.remove());
     const st = this.board.steps[i];
     if (!st) return;
-    for (const c of this.cards.values()) c.root.classList.remove("act", "good", "bad");
+    this.clearMarks();
+    this.world.querySelectorAll(".bd-val").forEach((v) => v.remove());
+    for (const c of this.cards.values()) c.stat.classList.remove("show");
     for (const id of this.cards.keys()) if (id !== st.card) this.closeCard(id);
     const card = st.card ? this.cards.get(st.card) : null;
-    const title = card ? `Step ${i} of ${this.board.steps.length - 1} · ${card.data.title}` : i === 0 ? "The big picture" : "Now you can say it";
+    const title = this.titleOf(i, card);
+    // The caption moves with the step at once, so the last step's words don't linger while the camera travels.
+    this.o.caption.title.textContent = title;
+    this.o.caption.text.textContent = "";
+    // A jump shows the board as it is at that step before the camera moves; only the next step draws in.
+    if (i !== this.drawnStep + 1) await this.drawUpTo(i, tok);
+    if (tok !== this.tok) return;
     const voiced = auto || this.s.playing;
-    // A step that points at lines or asks about them starts with none lit, so nothing is given away.
-    const teaches = st.beats.some((b) => b.lines.length);
+    // A step that points at lines starts with none lit, and its notes wait until it's told.
+    const points = st.beats.some((b) => b.lines.length);
     let opened: Promise<boolean> = Promise.resolve(true);
     if (!card) {
       void this.fit();
-      if (i === this.board.steps.length - 1) for (const e of this.edges.values()) e.path.classList.add("on");
+      await this.drawUpTo(i, tok);
+      if (st.part === "close") for (const e of this.edges.values()) e.path.classList.add("on");
     } else {
+      // Go to where the card is (or will be), then draw what the tour reaches here, then send the request in.
+      // A failure is told on the whole path it takes; anything else on its card.
+      await this.flyTo(this.fitRect(st.hops.length ? this.pathRect(st.hops) : this.cardRect(card)), 1000);
+      if (tok !== this.tok) return;
+      await this.drawUpTo(i, tok);
+      if (tok !== this.tok) return;
       card.root.classList.add("act");
-      const fly = this.flyTo(this.fitRect(this.cardRect(card)), 1000);
       let seq = Promise.resolve();
       if (st.route.length) {
         const pk = this.packet();
@@ -756,45 +831,49 @@ export class BoardEngine {
           pk.remove();
         })();
       }
-      await Promise.all([fly, seq]);
+      await seq;
       if (tok !== this.tok) return;
-      opened = this.openCard(card.data.id, tok, teaches ? [] : card.data.hot, !teaches);
+      if (!st.hops.length) opened = this.openCard(card.data.id, tok, points ? [] : card.data.hot, !points);
     }
     for (const [b, beat] of st.beats.entries()) {
       if (tok !== this.tok) return;
-      if (beat.kind !== "reveal") this.set({ quiz: null });
-      this.set({ beat: { i: b, kind: beat.kind } });
       const at = voiced ? { at: i, beat: b } : null;
+      // A failure plays out right after it's set up: the question, or the first sentence.
+      if (st.hops.length && b === 1) {
+        await this.playHops(st.hops, tok);
+        if (tok !== this.tok) return;
+        if (card) {
+          void this.flyTo(this.fitRect(this.cardRect(card)), 800);
+          opened = this.openCard(card.data.id, tok, [], false);
+        }
+      }
       if (card && beat.lines.length) await this.codeTyped(card, tok);
       if (tok !== this.tok) return;
-      if (beat.kind === "point" && card) {
+      if (beat.lines.length && card) {
         this.mark(card, beat.lines);
+        this.writeValues(card, beat.values ?? []);
         void this.leanIn(card, beat.lines);
       }
-      if (beat.kind === "predict") {
-        this.set({ quiz: { step: i, beat: b, answer: null } });
-        await this.narrate(title, beat.text, at, tok);
-        await this.waitAnswer(tok);
-        if (tok !== this.tok) return;
-        if (card && beat.lines.length) {
-          this.mark(card, beat.lines);
-          void this.leanIn(card, beat.lines);
-        }
-        await this.sleep(500, tok);
-        continue;
-      }
+      // Marked as current only as it's said, so its label and lines never show ahead of the words.
+      this.set({ beat: { i: b, kind: beat.kind } });
       const spoken = await this.narrate(title, beat.text, at, tok);
-      // Without a voice, leave time to read before the next sentence replaces this one.
-      await this.sleep((spoken ? 350 : 600 + beat.text.split(/\s+/).length * 240) / this.o.rate(), tok);
+      // After a question, a moment to think before Docent answers it; without a voice, time to read.
+      const words = beat.text.split(/\s+/).length;
+      await this.sleep((beat.kind === "ask" ? 1400 : spoken ? 350 : 600 + words * 240) / this.o.rate(), tok);
     }
+    if (st.hops.length && st.beats.length < 2) await this.playHops(st.hops, tok);
     if (tok !== this.tok) return;
-    if (card && teaches) {
+    if (card) {
       await opened;
       if (tok !== this.tok) return;
-      this.settleMarks(card);
-      void this.flyTo(this.fitRect(this.cardRect(card)), 700);
-      card.root.classList.remove("hold-notes");
-      await this.typeNotes(card, tok);
+      if (points || st.hops.length) {
+        this.settleMarks(card);
+        void this.flyTo(this.fitRect(this.cardRect(card)), 700);
+        card.root.classList.remove("hold-notes");
+        await this.typeNotes(card, tok);
+      }
+      // The card's notes ("Why", "Say it") get time to be read before the tour moves on.
+      if (this.s.playing) await this.sleep(this.readTime(`${card.data.why.text} ${card.data.say.text}`), tok);
     }
     if (tok !== this.tok) return;
     this.set({ beat: null });
@@ -806,6 +885,47 @@ export class BoardEngine {
     }
   }
 
+  /** How long reading this takes at the chosen speed: a steady pace with a moment to take it in. */
+  private readTime(text: string) {
+    return (1200 + text.split(/\s+/).length * 230) / this.o.rate();
+  }
+
+  /** What the caption calls a step: where it sits in the tour, and its card. */
+  private titleOf(i: number, card: CardEl | null | undefined) {
+    const st = this.board.steps[i]!;
+    const flow = this.board.steps.filter((s) => s.part === "flow");
+    if (st.part === "intro") return "The big picture";
+    if (st.part === "close") return "Now you can say it";
+    if (st.part === "fail") return `When it goes wrong · ${card?.data.title ?? ""}`;
+    if (st.part === "why") return `Why it's built this way · ${card?.data.title ?? ""}`;
+    return `Step ${flow.indexOf(st) + 1} of ${flow.length} · ${card?.data.title ?? ""}`;
+  }
+
+  /** The cards a failure passes through, to frame them all while it plays. */
+  private pathRect(hops: Board["steps"][number]["hops"]) {
+    const ids = new Set(hops.flatMap((h) => h.edge.split(">")));
+    const rects = [...ids].map((id) => this.cards.get(id)).filter((c): c is CardEl => !!c).map((c) => ({ x: c.x - 60, y: c.y - 140, w: W + 120, h: 360 }));
+    const x = Math.min(...rects.map((r) => r.x)), y = Math.min(...rects.map((r) => r.y));
+    return { x, y, w: Math.max(...rects.map((r) => r.x + r.w)) - x, h: Math.max(...rects.map((r) => r.y + r.h)) - y };
+  }
+
+  /** A request going wrong: the packet runs the path it really takes, each card shows its status, and it ends red. */
+  private async playHops(hops: Board["steps"][number]["hops"], tok: number) {
+    const first = hops[0]!.edge.split(">");
+    const pk = this.packet();
+    this.placePacket(pk, first[hops[0]!.back ? 1 : 0] ?? "", "r");
+    for (const h of hops) {
+      await this.travel(pk, h.edge, h.back, 700, tok);
+      if (tok !== this.tok) return pk.remove();
+      const [a, b] = h.edge.split(">");
+      pk.className = `bd-packet ${h.tone === "bad" ? "bad" : h.tone === "ok" ? "good" : ""}`;
+      this.stat((h.back ? a : b) ?? "", h.stat, h.tone, 6000);
+      await this.sleep(450, tok);
+    }
+    await this.sleep(500, tok);
+    pk.remove();
+  }
+
   /** Waits until the card's code has typed in, so its lines can be pointed at. */
   private async codeTyped(c: CardEl, tok: number) {
     while (!c.typed && tok === this.tok) await this.sleep(50, tok);
@@ -814,6 +934,17 @@ export class BoardEngine {
   private mark(c: CardEl, lines: number[]) {
     this.settleMarks(c);
     for (const n of lines) c.code.querySelector(`.bd-ln[data-i="${n - c.data.start}"]`)?.classList.add("pt");
+  }
+  /** The example's values, written beside the lines they pass through; they stay for the rest of the step. */
+  private writeValues(c: CardEl, values: { line: number; text: string }[]) {
+    for (const v of values) {
+      const row = c.code.querySelector<HTMLElement>(`.bd-ln[data-i="${v.line - c.data.start}"]`);
+      if (!row || row.querySelector(".bd-val")) continue;
+      const tag = document.createElement("span");
+      tag.className = "bd-val";
+      tag.textContent = v.text;
+      row.appendChild(tag);
+    }
   }
   private settleMarks(c: CardEl) {
     c.code.querySelectorAll(".bd-ln.pt").forEach((r) => r.classList.replace("pt", "hot"));
@@ -829,146 +960,7 @@ export class BoardEngine {
     const h = Math.max(320, bottom - top + 220);
     return this.flyTo(this.fitRect({ x: c.x - 60, y: (top + bottom) / 2 - h / 2, w: W + 120, h }), 700);
   }
-  /** Holds the tour on a question until the learner answers it (or skips). */
-  private async waitAnswer(tok: number) {
-    while (tok === this.tok && this.s.quiz && !this.s.quiz.answer) await new Promise((r) => setTimeout(r, 50));
-  }
-  /** The learner's guess for the question on screen: a choice, or null to skip to the answer. */
-  answer(choice: number | null) {
-    const q = this.s.quiz;
-    const beat = q && this.board.steps[q.step]?.beats[q.beat];
-    if (!q || !beat || q.answer) return;
-    this.set({ quiz: { ...q, answer: { choice, ok: choice === null ? null : !!beat.choices[choice]?.correct } } });
-  }
-  /** A question answered by pointing, waiting for a click on a line. */
-  private wantsLine() {
-    const q = this.s.quiz;
-    return this.s.mode === "tour" && !!q && !q.answer && !!this.board.steps[q.step]?.beats[q.beat]?.lines.length;
-  }
-  /** The learner pointed: right if it's one of the lines the answer lives on. */
-  private guessLine(cardId: string, line: number | null) {
-    const q = this.s.quiz!;
-    const st = this.board.steps[q.step]!;
-    const ok = cardId === st.card && line !== null && st.beats[q.beat]!.lines.includes(line);
-    if (!ok) this.cards.get(cardId)?.root.classList.add("bad");
-    else this.cards.get(cardId)?.root.classList.add("good");
-    this.set({ quiz: { ...q, answer: { choice: null, ok } } });
-  }
 
-  // ---------------------------------------------------------------- try it
-
-  /** The scenarios, as buttons on the card where the request starts (shown in Try it). */
-  private mkLauncher(first: CardEl) {
-    const l = document.createElement("div");
-    l.className = "bd-launch";
-    l.style.left = `${first.x}px`;
-    l.style.top = `${first.y - 132}px`;
-    l.innerHTML = `<span>Send one through</span><div></div>`;
-    for (const sc of this.board.tryIt.scenarios) {
-      const b = document.createElement("button");
-      b.textContent = sc.label;
-      b.dataset.sc = sc.id;
-      b.onpointerdown = (e) => e.stopPropagation();
-      b.onclick = () => void this.runScenario(sc.id);
-      l.lastElementChild!.appendChild(b);
-    }
-    this.world.appendChild(l);
-    this.launcher = l;
-  }
-
-  async runScenario(id: string) {
-    const sc = this.board.tryIt.scenarios.find((s) => s.id === id);
-    if (!sc) return;
-    const tok = ++this.tok;
-    this.clearEdges();
-    // A switch that's off changes how this scenario ends.
-    const off = this.board.tryIt.toggles.find((t) => t.scenario === id && !this.s.toggles[t.id]);
-    // With a safety off the request takes the broken path: the writer's own, or (older boards) the real one
-    // cut short at its first failure, since what saved it is gone.
-    const firstBad = sc.hops.findIndex((h) => h.tone === "bad");
-    const hops = off ? (off.offHops?.length ? off.offHops : sc.hops.slice(0, firstBad >= 0 ? firstBad + 1 : sc.hops.length)) : sc.hops;
-    const first = hops[0]?.edge.split(">");
-    const pk = this.packet();
-    this.placePacket(pk, (first?.[hops[0]?.back ? 1 : 0]) ?? "", "r");
-    for (const [n, h] of hops.entries()) {
-      const last = n === hops.length - 1;
-      await this.travel(pk, h.edge, h.back, 700, tok);
-      if (tok !== this.tok) return;
-      const [a, b] = h.edge.split(">");
-      const tone = off && last ? "bad" : h.tone;
-      pk.className = `bd-packet ${tone === "bad" ? "bad" : tone === "ok" ? "good" : ""}`;
-      this.stat((h.back ? a : b) ?? "", h.stat, tone);
-      await this.sleep(350, tok);
-    }
-    pk.remove();
-    const result = off ? off.result : sc.result;
-    await this.narrate("What just happened", result.text, null, tok);
-  }
-  /** Turns a safety off (or back on): the real line changes on its card, and the caption says what that means. */
-  async toggle(id: string) {
-    const t = this.board.tryIt.toggles.find((x) => x.id === id);
-    const c = t && this.cards.get(t.card);
-    if (!t || !c) return;
-    const on = !this.s.toggles[id];
-    this.set({ toggles: { ...this.s.toggles, [id]: on } });
-    const tok = ++this.tok;
-    const i = t.line - c.data.start;
-    c.cur[i] = on ? t.original : t.off;
-    if (on) c.changed.delete(i);
-    else c.changed.add(i);
-    c.root.classList.add("open");
-    c.typed = true;
-    this.renderCode(c, []);
-    this.fillNote(c.why, c.data.why, false);
-    this.fillNote(c.say, c.data.say, false);
-    void this.flyTo(this.fitRect(this.cardRect(c)), 700);
-    c.code.querySelector(`.bd-ln[data-i="${i}"]`)?.classList.add("flash");
-    await this.narrate(on ? "Back to normal" : "Changed code", on ? "Restored the original line." : `${t.detail} Run “${this.board.tryIt.scenarios.find((s) => s.id === t.scenario)?.label ?? "the scenario"}” to see what happens.`, null, tok);
-  }
-  resetTry() {
-    this.tok++;
-    for (const t of this.board.tryIt.toggles) if (!this.s.toggles[t.id]) void this.toggle(t.id);
-    this.clearEdges();
-    this.world.querySelectorAll(".bd-packet").forEach((p) => p.remove());
-  }
-
-  // ---------------------------------------------------------------- defend
-
-  /**
-   * Defend it, by pointing: a question is asked, the learner clicks the card (or the line) where the answer
-   * lives, and the board shows where it really is. Knowing where to look is the skill being tested.
-   */
-  ask(i: number) {
-    const d = this.board.defend[i];
-    if (!d) return;
-    this.tok++;
-    this.clearMarks();
-    for (const id of this.cards.keys()) this.closeCard(id);
-    this.set({ ask: { i, revealed: false, pick: null } });
-    void this.fit(700);
-  }
-  /** The learner pointed at a card (and maybe a line). */
-  private pick(cardId: string, line: number | null) {
-    const { i, revealed } = this.s.ask;
-    const d = this.board.defend[i];
-    if (!d || revealed) return;
-    const pick: Pick = cardId !== d.card ? "miss" : line !== null && d.lines.includes(line) ? "line" : "card";
-    if (pick === "miss") this.cards.get(cardId)?.root.classList.add("bad");
-    this.reveal(pick);
-  }
-  /** Shows where the answer lives: the right card opens on the lines that back it. */
-  reveal(pick: Pick | null = null) {
-    const { i } = this.s.ask;
-    const d = this.board.defend[i];
-    const c = d && this.cards.get(d.card);
-    this.set({ ask: { i, revealed: true, pick }, picks: pick ? { ...this.s.picks, [i]: pick } : this.s.picks });
-    if (!c) return;
-    const tok = ++this.tok;
-    c.root.classList.add("good", "act");
-    void this.openCard(c.data.id, tok, d.lines);
-    // The bar grows to show the answer; frame the card once it has, so the bar doesn't cover the lines.
-    requestAnimationFrame(() => requestAnimationFrame(() => void this.flyTo(this.fitRect(this.cardRect(c)), 700)));
-  }
   /**
    * Points at what an answer rests on: its cards light up, the first one opens on the cited lines, and the
    * camera frames them. Lines outside every card's excerpt are left to the answer's own chips.
@@ -985,6 +977,9 @@ export class BoardEngine {
     }
     const ids = [...new Set([...hits.keys(), ...cardIds])].filter((id) => this.cards.has(id));
     if (!ids.length) return false;
+    // An answer can point past where the tour has got to: draw what it cites.
+    for (const id of ids) void this.drawCard(id, 0);
+    for (const e of this.edges.values()) if (this.drawn.has(e.from) && this.drawn.has(e.to)) void this.drawEdge(e, 0);
     for (const id of ids) this.cards.get(id)!.root.classList.add("act");
     const first = [...hits.keys()][0];
     if (first) void this.openCard(first, tok, hits.get(first)!);
@@ -1000,43 +995,8 @@ export class BoardEngine {
     this.tok++;
     this.clearMarks();
   }
-  markDef(k: "yes" | "rev") {
-    const { i } = this.s.ask;
-    this.s.defended = { ...this.s.defended, [i]: k };
-    this.emit();
-    this.persist();
-    if (i < this.board.defend.length - 1) this.ask(i + 1);
-  }
   private clearMarks() {
     for (const c of this.cards.values()) c.root.classList.remove("good", "bad", "act");
-  }
-
-  // ---------------------------------------------------------------- modes and tools
-
-  setMode(m: Mode) {
-    this.tok++;
-    this.flyId++;
-    this.paused = false;
-    this.audio?.pause();
-    this.set({ mode: m, playing: false, beat: null, quiz: null });
-    for (const c of this.cards.values()) c.root.classList.remove("hold-notes");
-    this.clearEdges();
-    this.clearMarks();
-    this.stage.dataset.mode = m;
-    if (m === "tour") return void this.runStep(this.s.step, false);
-    for (const id of this.cards.keys()) this.closeCard(id);
-    if (m === "try") {
-      // Cards with a safety switch open, so the switch sits next to the line it turns off.
-      for (const t of this.board.tryIt.toggles) {
-        const c = this.cards.get(t.card);
-        if (!c) continue;
-        c.root.classList.add("open");
-        c.typed = true;
-        this.renderCode(c, []);
-      }
-      void this.fit();
-      void this.narrate("Try it", this.board.tryIt.intro, null, this.tok);
-    } else this.ask(this.s.ask.i);
   }
 
   // ---------------------------------------------------------------- pointer
@@ -1045,8 +1005,6 @@ export class BoardEngine {
     const entry = [...this.cards.values()].find((c) => c.root === root);
     if (!entry) return;
     // In Defend it, clicking a card is the answer: "this is where I'd look".
-    if (this.s.mode === "defend") return this.pick(entry.data.id, line);
-    if (this.wantsLine()) return this.guessLine(entry.data.id, line);
     if (root.classList.contains("open")) return this.closeCard(entry.data.id);
     const tok = ++this.tok;
     void this.openCard(entry.data.id, tok, this.hotFor(entry));
@@ -1075,13 +1033,11 @@ export class BoardEngine {
         return;
       }
       const head = t.closest<HTMLElement>(".bd-head");
-      // In Defend it, and when the tour asks where something happens, the code of a card counts as pointing at it.
-      const point = this.s.mode === "defend" || this.wantsLine() ? t.closest<HTMLElement>(".bd-card") : null;
-      const card = head?.parentElement ?? point;
+      const card = head?.parentElement ?? null;
       const item = card ?? sEl;
       const ln = t.closest<HTMLElement>(".bd-ln");
       line = ln && card ? (this.cards.get(card.dataset.id ?? "")?.data.start ?? 0) + Number(ln.dataset.i) : null;
-      drag = { id: e.pointerId, sx: e.clientX, sy: e.clientY, moved: false, item, head: head ?? point, ox: item?.offsetLeft ?? 0, oy: item?.offsetTop ?? 0, cx: this.cam.x, cy: this.cam.y, body: !head && !point && !!t.closest(".bd-card") };
+      drag = { id: e.pointerId, sx: e.clientX, sy: e.clientY, moved: false, item, head, ox: item?.offsetLeft ?? 0, oy: item?.offsetTop ?? 0, cx: this.cam.x, cy: this.cam.y, body: !head && !!t.closest(".bd-card") };
       if (!item) st.classList.add("pan");
       this.flyId++;
     };
@@ -1155,12 +1111,9 @@ export class BoardEngine {
         return this.clickCard(h.parentElement);
       }
       if (t.closest?.("button")) return;
-      const q = this.s.quiz;
-      const choices = q && !q.answer ? this.board.steps[q.step]?.beats[q.beat]?.choices ?? [] : [];
-      if (/^[1-9]$/.test(e.key) && Number(e.key) <= choices.length) this.answer(Number(e.key) - 1);
-      else if (e.key === " " && this.s.mode === "tour") (e.preventDefault(), this.play());
-      else if (e.key === "ArrowRight" && this.s.mode === "tour") this.goStep(this.s.step + 1);
-      else if (e.key === "ArrowLeft" && this.s.mode === "tour") this.goStep(this.s.step - 1);
+      if (e.key === " ") (e.preventDefault(), this.play());
+      else if (e.key === "ArrowRight") this.goStep(this.s.step + 1);
+      else if (e.key === "ArrowLeft") this.goStep(this.s.step - 1);
       else if (e.key.toLowerCase() === "f" && !e.metaKey && !e.ctrlKey) void this.fit(600);
     };
     st.addEventListener("pointerdown", down);
@@ -1169,12 +1122,6 @@ export class BoardEngine {
     st.addEventListener("pointercancel", up);
     st.addEventListener("wheel", wheel, { passive: false });
     st.addEventListener("dblclick", dbl);
-    const sw = (e: MouseEvent) => {
-      const b = (e.target as HTMLElement).closest<HTMLElement>(".bd-ln-sw");
-      if (b?.dataset.t) void this.toggle(b.dataset.t);
-    };
-    st.addEventListener("click", sw);
-    this.cleanup.push(() => st.removeEventListener("click", sw));
     document.addEventListener("keydown", key);
     this.cleanup.push(() => {
       st.removeEventListener("pointerdown", down);

@@ -18,8 +18,8 @@ function pointOf(turn: Turn) {
  * Ask Docent, on the board: a question about what you're looking at, answered from the code. Every
  * sentence is checked like the board's own notes, and the board points at the lines the answer rests on.
  */
-export function Chat({ board, es, engine, onClose }: { board: Board; es: EngineState; engine: BoardEngine; onClose: () => void }) {
-  const step = es.mode === "tour" ? es.step : undefined;
+export function Chat({ board, es, engine, onClose, ask, backToTour }: { board: Board; es: EngineState; engine: BoardEngine; onClose: () => void; ask?: string; backToTour?: boolean }) {
+  const step = es.step;
   const card = step !== undefined ? board.steps[step]?.card || undefined : undefined;
   const route: Route = { view: "board", id: board.flowId, ...(step !== undefined ? { step } : {}), ...(card ? { card } : {}) };
   const turns = useThread(routeKey(route));
@@ -57,6 +57,14 @@ export function Chat({ board, es, engine, onClose }: { board: Board; es: EngineS
       links: board.edges.map((e) => ({ from: e.from, to: e.to, label: e.label })),
     });
   };
+  // A question from the tour's "Why?" is asked as soon as it arrives.
+  const asked = useRef<string | null>(null);
+  useEffect(() => {
+    if (ask && asked.current !== ask && !busy) {
+      asked.current = ask;
+      send(ask);
+    }
+  });
   const here = board.cards.find((c) => c.id === card);
   const ideas = [
     here ? `What does “${here.title}” do, step by step?` : "What's the riskiest part of this flow?",
@@ -70,7 +78,9 @@ export function Chat({ board, es, engine, onClose }: { board: Board; es: EngineS
       <header>
         <b>Ask Docent</b>
         <small>{here ? `About “${here.title}”` : board.title}</small>
-        <button className="bd-chat-x" onClick={onClose} aria-label="Close the chat" title="Close"><Icon name="close" size={15} /></button>
+        {backToTour
+          ? <button className="bd-chat-back" onClick={onClose}><Icon name="play" size={12} fill />Back to the tour</button>
+          : <button className="bd-chat-x" onClick={onClose} aria-label="Close the chat" title="Close"><Icon name="close" size={15} /></button>}
       </header>
       <div className="bd-chat-list" ref={list}>
         {!turns.length && (

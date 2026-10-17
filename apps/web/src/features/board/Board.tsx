@@ -8,9 +8,15 @@ import { openCode, toHtml } from "../code/index.ts";
 import { timeLeft, useNow, useProgress } from "../jobs/index.ts";
 import { Icon, ThemeButton } from "../../shared/ui/index.ts";
 import { Chat } from "./Chat.tsx";
+import { loadProgress, saveProgress } from "./progress.ts";
 import { Said } from "./Said.tsx";
 import { BoardEngine, type EngineState, type Saved } from "./engine.ts";
 import "./board.css";
+
+/** What each part of the tour is, for the step dots. */
+const PART: Record<Board["steps"][number]["part"], string> = {
+  intro: "The big picture", flow: "Following the request", fail: "When it goes wrong", why: "Why it's built this way", close: "Now you can say it",
+};
 
 const savedKey = (id: string, b: Board) => `docent:board:${id}:${b.generatedAt}`;
 function loadSaved(id: string, b: Board): Saved {
@@ -29,7 +35,7 @@ async function highlight(lines: string[], file: string, start: number): Promise<
   return [...box.querySelectorAll(".line")].map((l) => l.innerHTML);
 }
 
-/** A flow's whiteboard: drawn on demand (a few minutes), then Tour, Try it and Defend it on one canvas. */
+/** A flow's whiteboard: drawn on demand (a few minutes), then one guided tour of it, with Ask beside it. */
 export function BoardScreen({ id, repoName, onHome, onSettings }: { id: string; repoName: string; onHome: () => void; onSettings: () => void }) {
   const [state, setState] = useState<BoardState | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -106,6 +112,8 @@ function BoardView({ id, board, job, repoName, onHome, onSettings }: { id: strin
   const { data: voice } = useQuery("voice-status", api.voice);
   const speak = voiceOn && !!voice?.available;
   const [chat, setChat] = useState(false);
+  // A "Why?" from the tour: the question it asked, and whether the tour was playing when it was asked.
+  const [why, setWhy] = useState<{ q: string; was: boolean } | null>(null);
   const live = useRef({ rate, speak, chat });
   live.current = { rate, speak, chat };
 
@@ -119,7 +127,7 @@ function BoardView({ id, board, job, repoName, onHome, onSettings }: { id: strin
       voice: (at, beat) => (live.current.speak ? api.boardVoice(id, at, beat).catch(() => null) : Promise.resolve(null)),
       highlight,
       openCode,
-      // The story bar covers the bottom in every mode; frame the board in the space above it.
+      // The story bar covers the bottom; frame the board in the space above it.
       insets: () => {
         const nar = narrow();
         const bar = document.querySelector<HTMLElement>(".bd-bar")?.offsetHeight ?? 120;
@@ -127,6 +135,11 @@ function BoardView({ id, board, job, repoName, onHome, onSettings }: { id: strin
         return { t: 70, b: bar + 32, l: nar ? 16 : 40, r: nar ? 16 : live.current.chat ? 440 : 40 };
       },
       saved: loadSaved(id, board),
+      // Pick up where you stopped, unless you'd finished (then it starts over) or the board was drawn again.
+      startAt: (() => {
+        const p = loadProgress(repoName, id);
+        return p && p.generatedAt === board.generatedAt && !p.done ? p.step : 0;
+      })(),
       persist: (s) => {
         try {
           localStorage.setItem(savedKey(id, board), JSON.stringify(s));
@@ -146,6 +159,15 @@ function BoardView({ id, board, job, repoName, onHome, onSettings }: { id: strin
   useEffect(() => {
     engine.current?.refresh(board);
   }, [board]);
+  // Remember how far the tour got; reaching the last step counts as watched.
+  const at = es?.step;
+  useEffect(() => {
+    if (at === undefined) return;
+    const last = board.steps.length - 1;
+    const before = loadProgress(repoName, id);
+    const done = at === last || (before?.generatedAt === board.generatedAt && before.done);
+    saveProgress(repoName, id, { generatedAt: board.generatedAt, step: at, steps: board.steps.length, done });
+  }, [at, repoName, id, board.generatedAt, board.steps.length]);
   // Where the story bar would cover the corner, the zoom controls sit just above it.
   const root = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -170,14 +192,26 @@ function BoardView({ id, board, job, repoName, onHome, onSettings }: { id: strin
   const closeChat = () => {
     setChat(false);
     engine.current?.unpoint();
+    if (why) engine.current?.resume(why.was);
+    setWhy(null);
+  };
+  /** Why? on what Docent just said: the tour holds, and the chat asks about that sentence. */
+  const askWhy = () => {
+    const said = capP.current?.textContent?.trim();
+    const eng = engine.current;
+    if (!said || !eng) return;
+    const was = why ? why.was : eng.hold();
+    setWhy({ q: `Why is that? You just said: “${said}”`, was });
+    setChat(true);
   };
 
   const e = engine.current;
-  const mode = es?.mode ?? "tour";
+  // A reveal shows what it rests on: its label and lines, under the caption.
+  const said = es?.beat ? board.steps[es.step]?.beats[es.beat.i] : null;
   const paused = !!e?.isPaused();
   const checking = board.status === "checking" && !!job && !job.finishedAt;
   return (
-    <div className={`bd-root mode-${mode}`} ref={root}>
+    <div className="bd-root" ref={root}>
       <div className="bd-stage" ref={stage} />
       <div className="bd-fl bd-brand">
         <button className="bd-back" onClick={onHome} title="All flows" aria-label="All flows"><Icon name="back" size={18} /></button>
@@ -193,50 +227,36 @@ function BoardView({ id, board, job, repoName, onHome, onSettings }: { id: strin
         <button onClick={() => void e?.fit()} aria-label="Reset: fit the board (F)" title="Reset: fit the board (F)"><Icon name="fit" size={13} /></button>
       </div>
 
-      {chat && es && e && <Chat board={board} es={es} engine={e} onClose={closeChat} />}
+      {chat && es && e && <Chat board={board} es={es} engine={e} onClose={closeChat} ask={why?.q} backToTour={!!why} />}
       {/* The story bar: one place for what's being said, where you are, and what you can do next. */}
       <div className="bd-fl bd-bar">
-        <div className="bd-bar-modes" role="tablist" aria-label="Mode">
-          {(["tour", "try", "defend"] as const).map((m) => (
-            <button key={m} role="tab" aria-selected={mode === m} className={mode === m ? "on" : ""} onClick={() => e?.setMode(m)}>
-              {m === "tour" ? "Tour" : m === "try" ? "Try it" : "Defend it"}
-            </button>
-          ))}
-        </div>
         <div className="bd-bar-body" aria-live="polite">
-          <div className="bd-cap" hidden={mode === "defend"}>
-            <small ref={capT} />
+          <div className="bd-cap">
+            <div className="bd-cap-head">
+              <small ref={capT} />
+              <button className="bd-why" onClick={askWhy} title="Ask why about what Docent just said; the tour waits">Why?</button>
+            </div>
             <p ref={capP} />
           </div>
-          {mode === "tour" && es?.quiz && e && <Guess board={board} es={es} engine={e} checking={checking} />}
-          {mode === "defend" && es && e && <Defend board={board} es={es} engine={e} />}
+          {said?.kind === "reveal" && said.claim && <Said claim={said.claim} checking={checking} className="bare" />}
         </div>
         <div className="bd-bar-ctl">
-          {mode === "tour" && (
-            <>
-              <button onClick={() => e?.goStep((es?.step ?? 0) - 1)} aria-label="Previous step (←)" title="Previous step (←)"><Icon name="prev" size={16} fill /></button>
-              <button className="bd-play" onClick={() => e?.play()} aria-label={!es?.playing || paused ? "Play (space)" : "Pause (space)"}>{!es?.playing || paused ? <Icon name="play" size={15} fill /> : <Icon name="pause" size={15} fill />}{!es?.playing ? "Play" : paused ? "Resume" : "Pause"}</button>
-              <button onClick={() => e?.goStep((es?.step ?? 0) + 1)} aria-label="Next step (→)" title="Next step (→)"><Icon name="next" size={16} fill /></button>
-              <div className="bd-steps">
-                {board.steps.map((_, i) => (
-                  <b key={i} role="button" aria-label={`Step ${i + 1}`} className={i === es?.step ? "on" : i < (es?.step ?? 0) ? "done" : ""} onClick={() => e?.goStep(i)} />
-                ))}
-              </div>
-              <button onClick={() => rateStore.set(nextRate(rate))} title="Speed">{rate}×</button>
-              <button
-                onClick={() => voiceOnStore.set(!voiceOn)}
-                disabled={!voice?.available}
-                aria-pressed={speak}
-                title={!voice ? "" : voice.available ? (voiceOn ? "Mute the narrator" : "Hear the narrator") : voice.reason}
-              ><Icon name={speak ? "sound" : "muted"} size={18} /></button>
-            </>
-          )}
-          {mode === "try" && (
-            <>
-              <span className="bd-bar-hint">Send a request from the first card, or flip a switch in the code to break it.</span>
-              <button onClick={() => e?.resetTry()}>Reset</button>
-            </>
-          )}
+          <button onClick={() => e?.goStep((es?.step ?? 0) - 1)} aria-label="Previous step (←)" title="Previous step (←)"><Icon name="prev" size={16} fill /></button>
+          <button className="bd-play" onClick={() => e?.play()} aria-label={!es?.playing || paused ? "Play (space)" : "Pause (space)"}>{!es?.playing || paused ? <Icon name="play" size={15} fill /> : <Icon name="pause" size={15} fill />}{!es?.playing ? "Play" : paused ? "Resume" : "Pause"}</button>
+          <button onClick={() => e?.goStep((es?.step ?? 0) + 1)} aria-label="Next step (→)" title="Next step (→)"><Icon name="next" size={16} fill /></button>
+          <div className="bd-steps">
+            {board.steps.map((st, i) => (
+              <b key={i} role="button" aria-label={`Step ${i + 1}: ${PART[st.part]}`} title={PART[st.part]} className={`${i === es?.step ? "on" : i < (es?.step ?? 0) ? "done" : ""}${i > 0 && board.steps[i - 1]!.part !== st.part ? " gap" : ""}`} onClick={() => e?.goStep(i)} />
+            ))}
+          </div>
+          <span className="bd-bar-gap" />
+          <button onClick={() => rateStore.set(nextRate(rate))} title="Speed">{rate}×</button>
+          <button
+            onClick={() => voiceOnStore.set(!voiceOn)}
+            disabled={!voice?.available}
+            aria-pressed={speak}
+            title={!voice ? "" : voice.available ? (voiceOn ? "Mute the narrator" : "Hear the narrator") : voice.reason}
+          ><Icon name={speak ? "sound" : "muted"} size={18} /></button>
           <button className={`bd-ask${chat ? " on" : ""}`} onClick={() => (chat ? closeChat() : setChat(true))} aria-pressed={chat} aria-label="Ask Docent" title="Ask Docent about this board (/)">
             <Icon name="ask" size={16} /><span className="bd-ask-t">Ask</span>
           </button>
@@ -245,76 +265,3 @@ function BoardView({ id, board, job, repoName, onHome, onSettings }: { id: strin
     </div>
   );
 }
-
-/**
- * A guess on the tour: Docent asked and waits. Pick an answer (or press 1–3), click the line on the card, or
- * skip to the answer. Then the right one shows, and the reveal brings its label and the lines it rests on.
- */
-function Guess({ board, es, engine, checking }: { board: Board; es: EngineState; engine: BoardEngine; checking: boolean }) {
-  const q = es.quiz!;
-  const step = board.steps[q.step];
-  const beat = step?.beats[q.beat];
-  if (!beat) return null;
-  const a = q.answer;
-  // The answer's label and lines show from the reveal on, and stay until the tour moves past the question.
-  const r = step?.beats.findIndex((b, i) => i > q.beat && b.kind === "reveal") ?? -1;
-  const reveal = r >= 0 && (es.beat === null || es.beat.i >= r) ? step?.beats[r]?.claim : null;
-  const verdict = !a ? null : a.ok === null ? null : a.ok ? "You got it." : beat.choices.length ? "Not quite." : "Not that line. Here's where it is.";
-  return (
-    <div className="bd-guess">
-      {beat.choices.length ? (
-        <div className="bd-guess-choices" role="group" aria-label="Your guess">
-          {beat.choices.map((c, i) => {
-            const state = !a ? "" : c.correct ? "right" : a.choice === i ? "wrong" : "dim";
-            return (
-              <button key={i} className={state} disabled={!!a} onClick={() => engine.answer(i)}>
-                <kbd>{i + 1}</kbd>{c.text}
-              </button>
-            );
-          })}
-        </div>
-      ) : (
-        !a && <p className="bd-guess-hint">Click the line on the card where this happens.</p>
-      )}
-      <div className="bd-guess-foot">
-        {verdict && <span className={`bd-guess-verdict ${a?.ok ? "ok" : "no"}`}>{verdict}</span>}
-        {!a && <button className="bd-guess-skip" onClick={() => engine.answer(null)}>Show me</button>}
-        {reveal && <Said claim={reveal} checking={checking} className="bare" />}
-      </div>
-    </div>
-  );
-}
-
-/** Defend it, by pointing: the question, then where the answer lives and how to argue it. */
-function Defend({ board, es, engine }: { board: Board; es: EngineState; engine: BoardEngine }) {
-  const { i, revealed, pick } = es.ask;
-  const d = board.defend[i];
-  if (!d) return null;
-  const where = board.cards.find((c) => c.id === d.card);
-  const found = Object.values(es.picks).filter((p) => p !== "miss").length;
-  const verdict = pick === "line" ? "Right on the line." : pick === "card" ? `Right card. The lines that matter are highlighted.` : pick === "miss" ? `Not there. It lives in “${where?.title ?? "another card"}”.` : `It lives in “${where?.title ?? "this card"}”.`;
-  return (
-    <div className="bd-def">
-      <small>Question {i + 1} of {board.defend.length} · {found} found by pointing</small>
-      <p className="bd-def-q">{d.q}</p>
-      {!revealed ? (
-        <div className="bd-def-ask">
-          <span>Say your answer out loud, then click the card (or the line) where it lives.</span>
-          <button onClick={() => engine.reveal()}>Show me</button>
-        </div>
-      ) : (
-        <div className="bd-def-ans">
-          <p className={`bd-def-verdict ${pick ?? ""}`}>{verdict}</p>
-          <p>{d.answer.text}</p>
-          <p className="bd-def-push"><b>If they push: {d.pushQ}</b> {d.pushA}</p>
-          <p className="bd-def-brk"><b>What breaks without it:</b> {d.breaks}</p>
-          <div className="bd-def-mark">
-            <button className={es.defended[i] === "yes" ? "on" : ""} onClick={() => engine.markDef("yes")}>I could defend that</button>
-            <button onClick={() => engine.markDef("rev")}>Revisit later</button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
