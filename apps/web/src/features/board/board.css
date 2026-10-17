@@ -63,7 +63,6 @@
 .bd-ln.hot { background: var(--hotl); border-left-color: var(--acc); }
 .bd-ln.chg { background: rgba(255, 132, 120, .18); border-left-color: var(--bad); }
 .bd-ln span span { color: var(--shiki-dark, inherit) !important; }
-.bd-cmt { color: var(--code-mut); font-style: italic; }
 .bd-caret { display: inline-block; width: 8px; height: 16px; background: currentColor; vertical-align: -3px; animation: bd-bl 1s steps(2) infinite; }
 @keyframes bd-bl { 50% { opacity: 0; } }
 .bd-file { padding: 8px 14px 0; }
@@ -296,3 +295,32 @@
   .bd-ask-t { display: none; }
   .bd-fl .bd-ask { margin-left: 0; }
 }
+
+/* the tour as a lesson: Docent's hand on a line, and a guess before the answer */
+.bd-ln.pt { background: linear-gradient(90deg, color-mix(in srgb, var(--acc) 34%, transparent), color-mix(in srgb, var(--acc) 34%, transparent)) no-repeat 0 0 / 0% 100%; border-left-color: var(--acc); animation: bd-mark .7s var(--ease-out) forwards; }
+@keyframes bd-mark { to { background-size: 100% 100%; } }
+.bd-ln.hot { transition: background-color .4s ease; }
+.bd-guess { margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
+.bd-guess-choices { display: flex; flex-wrap: wrap; gap: 6px; }
+.bd-fl .bd-guess-choices button { display: inline-flex; align-items: center; gap: 8px; height: auto !important; min-height: 36px; padding: 6px 12px 6px 7px !important; border: 1.5px solid var(--bline) !important; border-radius: 12px !important; text-align: left; font-size: 14px; line-height: 1.3; transition: border-color .15s, background-color .15s, opacity .2s, transform .12s var(--ease-out); }
+.bd-fl .bd-guess-choices button:not(:disabled):hover { border-color: var(--acc) !important; }
+.bd-fl .bd-guess-choices button:not(:disabled):active { transform: scale(.98); }
+.bd-guess-choices kbd { flex: none; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 7px; background: var(--fill); font: 600 11.5px var(--ui); color: var(--mut); }
+.bd-fl .bd-guess-choices button:disabled { cursor: default; color: var(--bink) !important; }
+.bd-fl .bd-guess-choices button.right { border-color: var(--ok) !important; background: color-mix(in srgb, var(--ok) 14%, transparent) !important; }
+.bd-fl .bd-guess-choices button.wrong { border-color: var(--warnc) !important; background: color-mix(in srgb, var(--warnc) 12%, transparent) !important; }
+.bd-fl .bd-guess-choices button.dim { opacity: .45; }
+.bd-guess-choices .right kbd { background: var(--ok); color: #fff; }
+.bd-guess-hint { margin: 0; font-size: 13.5px; color: var(--mut); }
+.bd-guess-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; min-height: 0; }
+.bd-guess-foot:empty { display: none; }
+.bd-guess-verdict { font-weight: 650; font-size: 14px; }
+.bd-guess-verdict.ok { color: var(--ok); }
+.bd-guess-verdict.no { color: var(--warnc); }
+.bd-fl .bd-guess-skip { height: 32px !important; border: 1.5px solid var(--bline) !important; border-radius: 10px !important; padding: 0 12px !important; font-size: 13px; }
+.bd-said.bare > p, .bd-said.bare > .bd-taken { display: none; }
+.bd-said.bare .bd-said-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.bd-said.bare .bd-said-lab { display: inline-flex; align-items: center; gap: 6px; font: 600 11.5px var(--ui); color: var(--mut); cursor: help; }
+.bd-said.bare .bd-chip { color: var(--bink) !important; background: var(--fill); border-color: var(--bline); }
+@media (prefers-reduced-motion: reduce) { .bd-ln.pt { animation: none; background-size: 100% 100%; } }
+.bd-card.hold-notes .bd-notes { display: none; }

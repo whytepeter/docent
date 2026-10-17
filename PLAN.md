@@ -11,28 +11,35 @@ docent/
 ├── apps/
 │   ├── web/                    the local app (React + Vite)
 │   │   └── src/
-│   │       ├── app/            shell: layout, routing, providers, keyboard
+│   │       ├── app/            shell: two routes (#/ home, #/board/<id>), settings, repo switch
 │   │       ├── features/
-│   │       │   ├── navigator/      sidebar tree: system → area → file → function
-│   │       │   ├── system-map/     the whole repo as areas and how they depend
-│   │       │   ├── file-view/      one file: its functions, importers, imports
-│   │       │   ├── function-view/  one function: callers, callees, tests (the core screen)
-│   │       │   ├── code/           code sheet and excerpts with highlighted lines
-│   │       │   ├── evidence/       evidence dots and the sheet behind them
-│   │       │   ├── search/         ⌘K jump to any file or function
-│   │       │   ├── health/         toolbar badge: stale docs, unused files, guesses
-│   │       │   ├── freshness/      which commit, is the repo ahead, re-read
-│   │       │   └── episode/        (M4) Learn mode player
-│   │       └── shared/         design tokens, UI primitives, API client, hooks
+│   │       │   ├── home/           what the project does, then its flows as cards
+│   │       │   ├── board/          one flow's whiteboard: camera, tour, Try it, Defend it, chat, tray
+│   │       │   ├── ask/            chat threads and streaming answers (used by the board's chat)
+│   │       │   ├── code/           code sheet and excerpts with highlighted lines (Shiki)
+│   │       │   ├── jobs/           background job state and the job pill
+│   │       │   ├── settings/       narrator, Claude, appearance
+│   │       │   └── workspace/      open a codebase
+│   │       └── shared/         design tokens, UI primitives, API client, stores, theme
 │   └── server/                 local server (Hono)
 │       └── src/
 │           ├── app.ts          wires features into one Hono app
 │           └── features/
-│               ├── repo/       open a repo, extract or load cached facts, watch
-│               ├── graph/      queries over facts: overview, file, function, search
-│               └── source/     read-only file content by range
+│               ├── workspace/  which codebase is open, recent ones, the folder picker
+│               ├── repo/       extract or load cached facts
+│               ├── boards/     flows, overview, boards, background drawing jobs, stop
+│               ├── ask/        scoped questions, checked answers (SSE)
+│               ├── analysis/   features, verification, episodes (the M3–M4 pipeline)
+│               ├── graph/      queries over facts
+│               ├── source/     read-only file content by range
+│               ├── voice/      narration clips
+│               └── settings/   keys, voice, Claude mode
 └── packages/
     ├── extract/                stage 1: facts from code, git and docs (no LLM)
+    ├── analyze/                Claude stages: features, verify, flows, boards, overview, ask, the checks
+    ├── llm/                    Claude Code (subscription) or the API behind one interface
+    ├── voice/                  Cartesia and Fish Audio adapters
+    ├── contracts/              types shared by server and app
     └── cli/                    `docent <repo>`: starts the server, opens the browser
 ```
 
@@ -204,6 +211,18 @@ Checked with a stand-in voice in the browser; not yet with Cartesia itself. To h
 - Clips are cached by a hash of text + provider + voice + settings, so switching provider regenerates the audio but leaves content untouched.
 - Pacing comes from the real clip length. The pronunciation table is applied as text substitution by default, or passed to the provider when it supports dictionaries.
 - Providers only ever receive narration text, never code. Keys come only from the environment.
+
+### M5.5: The board is the app ✅
+The map-and-inspector screens gave way to one idea: pick a flow of the codebase, and Docent draws it as a whiteboard from the real code, to tour, break and defend.
+- **Flows** (`packages/analyze/src/board.ts`): `proposeFlows` (about 25 s) suggests the flows worth learning; `writeBoard` (about 2 min) draws one as cards, links and a tour; `citeBoard` runs the citation check on every card (instant); `checkBoard` is the second reader, running behind the open board.
+- **Home** (`features/home`): what the project does (`packages/analyze/src/overview.ts`, cited and double-checked, cached in `overview.json`), then the flow cards tagged Ready, Drawing, or not drawn yet.
+- **Board** (`features/board`): a plain-DOM camera on a FigJam dot canvas with a zoom pill (+, −, fit). The Tour narrates step by step; Try it and Defend it test the learner; `pointAt` frames any card or line. Claims, labels and line references render as chips (`Said.tsx`).
+- **Ask Docent on the board:** the Ask button or `/`. The chat is scoped to the tour step and reuses `/api/ask` with `Route { view: "board" }`. Answers go through the citation check and the second reader, and the board opens the cited card on the cited lines.
+- **Background drawing:** boards draw as server jobs. A tray (bottom left) shows progress, says when one is ready with an open button, and its × cancels, hides or stops. `POST /api/boards/:id/stop` aborts the Claude run.
+- **Look and feel:** light, dark and system theme from one cycling button (`data-theme` on `<html>`); Lucide icons; Atkinson Hyperlegible Next with Geist Mono for code; the Lucide `Presentation` mark with a lowercase "docent" wordmark; responsive at 375 px and 768 px.
+- **Tidy-up:** the old screens (system map, navigator, area, file, function and feature views, feature review, episode player, search, health badge, freshness) and the React Flow and ELK diagram layer were removed from the app, along with `@xyflow/react`, `elkjs`, `motion` and Phosphor. Their server routes and CLI commands remain.
+
+**Backlog:** a stop button on the board's own drawing screen; chat answers kept across reloads.
 
 ### M6: Work-mode depth
 - Must stay true, if you change it, when it breaks, break-it, and exercises, generated per function.

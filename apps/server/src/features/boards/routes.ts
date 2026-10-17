@@ -15,15 +15,15 @@ export function boardRoutes(svc: BoardService, root: () => string): Hono {
     })
     .post("/boards/:id/write", (c) => c.json(svc.writeBoard(c.req.param("id"))))
     .post("/boards/:id/stop", (c) => c.json(svc.stopBoard(c.req.param("id"))))
-    // Only a tour step's own narration is ever sent to the voice provider, looked up here by its number.
+    // Only a tour beat's own words are ever sent to the voice provider, looked up here by step and beat.
     .post("/boards/:id/voice", async (c) => {
-      const { at } = (await c.req.json().catch(() => ({}))) as { at?: number };
-      const step = loadBoard(root(), c.req.param("id"))?.steps[at ?? -1];
-      if (!step) return c.json({ error: "No such step" }, 404);
+      const { at, beat } = (await c.req.json().catch(() => ({}))) as { at?: number; beat?: number };
+      const said = loadBoard(root(), c.req.param("id"))?.steps[at ?? -1]?.beats[beat ?? 0];
+      if (!said?.text) return c.json({ error: "No such beat" }, 404);
       const v = pickVoice();
       if ("reason" in v) return c.json({ error: v.reason }, 409);
-      const tone = v.expressive ? (/\?\s*$/.test(step.text) ? "curious" : "calm") : undefined;
-      const clip = await speak(v.adapter, v.voice, step.text, { speed: v.speed, ...(tone ? { tone } : {}), signal: c.req.raw.signal });
+      const tone = v.expressive ? said.tone : undefined;
+      const clip = await speak(v.adapter, v.voice, said.text, { speed: v.speed, ...(tone ? { tone } : {}), signal: c.req.raw.signal });
       return c.json<VoiceClip>({ ...clip, url: `/api/voice/${clip.hash}.wav` });
     });
 }

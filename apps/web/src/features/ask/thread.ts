@@ -1,7 +1,6 @@
 import { useSyncExternalStore } from "react";
 import type { AskAnswer, Route } from "@docent/contracts";
 import { api } from "../../shared/api/client.ts";
-import { canvasStore } from "../../shared/state/scene.ts";
 
 export type Stage = "reading" | "answering" | "checking";
 export interface Turn {
@@ -29,8 +28,8 @@ export function useThread(key: string): Turn[] {
 
 export const isAsking = () => !!inFlight;
 
-/** `view` overrides what's on screen; a board passes its cards and links (the canvas store is the old screens'). */
-export async function askQuestion(route: Route, question: string, view?: { boxes: { id: string; title: string; sub?: string }[]; links: { from: string; to: string; label?: string }[] }): Promise<void> {
+/** `view` is what's on screen: the board's cards and links. */
+export async function askQuestion(route: Route, question: string, view: { boxes: { id: string; title: string; sub?: string }[]; links: { from: string; to: string; label?: string }[] }): Promise<void> {
   const key = routeKey(route);
   const turns = threads.get(key) ?? [];
   const history = turns.filter((t) => t.answer).map((t) => ({ question: t.question, answer: t.answer!.paragraphs.map((p) => p.text).join(" ") }));
@@ -39,7 +38,7 @@ export async function askQuestion(route: Route, question: string, view?: { boxes
   bump();
   inFlight?.abort();
   const abort = (inFlight = new AbortController());
-  const { boxes, links } = view ?? canvasStore.get();
+  const { boxes, links } = view;
   try {
     await api.ask({ route, question, boxes, links, history }, (e) => {
       if (e.type === "stage") turn.stage = e.stage;

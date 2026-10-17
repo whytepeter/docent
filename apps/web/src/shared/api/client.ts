@@ -1,4 +1,4 @@
-import type { AnalysisHealth, AskEvent, AskRequest, AreaView, BoardState, EpisodeState, FlowsState, Settings, VoiceClip, VoiceOption, VoiceProvider, VoiceStatus, Feature, FeatureDetail, FeaturesState, FileView, Health, Job, Overview, SearchHit, SourceSlice, Status, SymbolView, TreeNode, Workspace, PartOf } from "@docent/contracts";
+import type { AskEvent, AskRequest, BoardState, FlowsState, Settings, VoiceClip, VoiceOption, VoiceProvider, VoiceStatus, FeaturesState, Job, SourceSlice, Workspace } from "@docent/contracts";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   // The server refuses state changes without this header, which other sites can't send.
@@ -39,22 +39,9 @@ export const api = {
   workspace: () => request<Workspace>("/api/workspace"),
   openRepo: (path: string) => request<Workspace>("/api/workspace/open", json({ path })),
   pickFolder: () => request<{ path: string | null }>("/api/workspace/pick", { method: "POST" }),
-  overview: () => request<Overview>("/api/overview"),
-  tree: () => request<TreeNode[]>("/api/tree"),
-  health: () => request<Health>("/api/health"),
-  analysisHealth: () => request<AnalysisHealth>("/api/features/health"),
-  status: () => request<Status>("/api/status"),
-  search: (text: string) => request<SearchHit[]>(`/api/search?q=${q(text)}`),
-  area: (id: string) => request<AreaView>(`/api/area?id=${q(id)}`),
-  file: (path: string) => request<FileView>(`/api/file?path=${q(path)}`),
-  symbol: (id: string) => request<SymbolView>(`/api/symbol?id=${q(id)}`),
   source: (path: string, from?: number, to?: number) =>
     request<SourceSlice>(`/api/source?path=${q(path)}${from ? `&from=${from}` : ""}${to ? `&to=${to}` : ""}`),
-  reextract: () => request<Status>("/api/reextract", { method: "POST" }),
   features: () => request<FeaturesState>("/api/features"),
-  feature: (id: string) => request<FeatureDetail>(`/api/features/${q(id)}`),
-  partOf: (file: string, symbol?: string) => request<PartOf>(`/api/part-of?file=${q(file)}${symbol ? `&symbol=${q(symbol)}` : ""}`),
-  episode: (id: string) => request<EpisodeState>(`/api/episodes/${q(id)}`),
   writeEpisode: (id: string) => request<Job>(`/api/episodes/${q(id)}/write`, { method: "POST" }),
   flows: () => request<FlowsState>("/api/flows"),
   proposeFlows: () => request<Job>("/api/flows/propose", { method: "POST" }),
@@ -62,7 +49,7 @@ export const api = {
   board: (id: string) => request<BoardState>(`/api/boards/${q(id)}`),
   writeBoard: (id: string) => request<Job>(`/api/boards/${q(id)}/write`, { method: "POST" }),
   stopBoard: (id: string) => request<Job | null>(`/api/boards/${q(id)}/stop`, { method: "POST" }),
-  boardVoice: (id: string, at: number) => request<VoiceClip>(`/api/boards/${q(id)}/voice`, json({ at })),
+  boardVoice: (id: string, at: number, beat: number) => request<VoiceClip>(`/api/boards/${q(id)}/voice`, json({ at, beat })),
   settings: () => request<Settings>("/api/settings"),
   setKey: (provider: VoiceProvider | "anthropic", key: string | null) => request<Settings>("/api/settings/keys", { ...json({ provider, key }), method: "PUT" }),
   setVoice: (patch: { provider?: VoiceProvider; voice?: string; speed?: number; expressive?: boolean; pronunciations?: Record<string, string> }) => request<Settings>("/api/settings/voice", { ...json(patch), method: "PUT" }),
@@ -70,11 +57,8 @@ export const api = {
   voices: (provider: VoiceProvider, q: string) => request<VoiceOption[]>(`/api/settings/voices?provider=${provider}&q=${q ? encodeURIComponent(q) : ""}`),
   previewVoice: (provider: VoiceProvider, voice: string) => request<VoiceClip>("/api/settings/voices/preview", json({ provider, voice })),
   voice: () => request<VoiceStatus>("/api/voice"),
-  voiceClip: (id: string, at: number) => request<VoiceClip>(`/api/episodes/${q(id)}/voice`, json({ at })),
   cancelJob: () => request<Job | null>("/api/features/cancel", { method: "POST" }),
   prepare: () => request<Job>("/api/features/prepare", { method: "POST" }),
   discover: () => request<Job>("/api/features/discover", { method: "POST" }),
   verify: (id?: string) => request<Job>("/api/features/verify", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(id ? { id } : {}) }),
-  saveFeatures: (features: Feature[], approve = false) =>
-    request("/api/features", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ features, approve }) }),
 };

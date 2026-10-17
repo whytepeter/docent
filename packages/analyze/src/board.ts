@@ -65,6 +65,17 @@ export const Claim = z.object({
   searched: z.string().describe("For a claim that something never happens: what you searched; otherwise empty"),
 });
 
+const TONES = ["calm", "warm", "curious", "concerned", "emphatic"] as const;
+/** One move of the teacher at the board: talk, point at lines, ask the learner to guess, give the answer. */
+const Beat = z.object({
+  kind: z.enum(["say", "point", "predict", "reveal"]),
+  text: z.string().describe("What Docent says, for the ear: one or two short sentences, under 30 words, no paths or code read aloud. predict: the question. reveal: the answer as you'd say it"),
+  tone: z.enum(TONES).describe("calm (explaining, the default), warm (this part is solid), curious (a question), concerned (a risk), emphatic (the one thing to remember)"),
+  lines: z.array(z.number().int()).describe("point: the 1 to 3 lines (absolute numbers inside this step's card excerpt) to mark while this is said. predict answered by pointing: the lines where the answer is. Otherwise []"),
+  choices: z.array(z.object({ text: z.string().describe("A short answer, under 12 words"), correct: z.boolean() })).describe("predict only: 2 or 3 answers, exactly one correct; or [] to have the learner click the lines instead. Otherwise []"),
+  claim: Claim.nullable().describe("reveal only: what the reveal asserts, with evidence; the spoken text must not say more. Otherwise null"),
+});
+
 const BoardSchema = z.object({
   title: z.string().describe("A plain title, e.g. 'How an ID upload works'"),
   intro: z.string().describe("Two plain sentences for the big-picture step"),
@@ -83,8 +94,8 @@ const BoardSchema = z.object({
   edges: z.array(z.object({ from: z.string(), to: z.string(), label: z.string().describe("What travels, in 2–4 words, e.g. 'POST /upload'") })),
   steps: z.array(z.object({
     card: z.string().describe("Card id this step is about, or empty for a big-picture step"),
-    text: z.string().describe("Narration, about 25–35 words, plain words for the ear: no paths or code read aloud"),
     route: z.array(z.string()).describe("Edges the packet travels before this step, as 'from>to' card ids"),
+    beats: z.array(Beat).describe("2 to 5 beats, in the order they happen"),
   })).describe("5 to 8 steps: a big picture first, one per card following the request, and a last 'now you can say it' step"),
   tryIt: z.object({
     intro: z.string().describe("One line inviting the developer to try the flow and break it"),
@@ -143,8 +154,26 @@ export interface BoardCard {
   say: AnalysisClaim;
 }
 
+export type BeatTone = (typeof TONES)[number];
+export interface Beat {
+  kind: "say" | "point" | "predict" | "reveal";
+  text: string;
+  tone: BeatTone;
+  /** point: lines marked while it's said. predict without choices: the lines that answer it. */
+  lines: number[];
+  choices: { text: string; correct: boolean }[];
+  /** reveal only. */
+  claim: AnalysisClaim | null;
+}
+export interface BoardStep {
+  card: string;
+  route: string[];
+  beats: Beat[];
+}
+
 export interface Board {
-  version: 1;
+  /** 2: tour steps are beats (say, point, predict, reveal). 1: one narration per step, upgraded on load. */
+  version: 1 | 2;
   flowId: string;
   generatedAt: string;
   model: string;
@@ -155,7 +184,7 @@ export interface Board {
   pitch: string;
   cards: BoardCard[];
   edges: BoardSpec["edges"];
-  steps: BoardSpec["steps"];
+  steps: BoardStep[];
   tryIt: {
     intro: string;
     scenarios: (Omit<BoardSpec["tryIt"]["scenarios"][number], "result"> & { result: AnalysisClaim })[];
@@ -170,7 +199,13 @@ const BOARD_SYSTEM = `You are Docent, making a whiteboard that explains one flow
 Read the code (you have read-only tools) and build the board:
 - 3 to 6 cards, one per part the request passes through, in order. Each card shows a real excerpt of a file: give the file and the line range (8–20 lines that matter); Docent cuts the code from the file itself.
 - Edges between cards with what travels along them.
-- Tour steps: a big picture, one step per card following the request, then a short "now you can say it" step. Narration is for the ear: plain words, no paths or code read aloud.
+- The tour: teach it, don't read it out. Steps follow the request (a big picture, one step per card, then "now you can say it"); each step is a few beats:
+  - say: Docent talks.
+  - point: Docent talks while marking 1 to 3 exact lines on the card, like a hand on the whiteboard. Every card step points at least once, at the lines that do the work.
+  - predict: Docent stops and asks the learner to guess before showing: what happens next, what a line is for, what goes wrong without it. They pick from 2 or 3 answers, or click the line where it happens. Ask where a newcomer would guess wrong, never trivia.
+  - reveal: right after each predict, the answer, with a claim and evidence.
+- Shape the lesson. The first step (no card) sets up one concrete situation, a real-looking request with plausible values, and the question the tour answers. Follow that same request through every card. Each card step says why the part exists (the problem it solves) before how it works. Use 3 or 4 predicts across the tour, on the moments that matter most: a guard, a retry, a surprising order, a failure. The last step (no card) ties it together in the one sentence they can say out loud.
+- Talk like a senior engineer at a whiteboard: "you", short sentences, callbacks to earlier steps ("remember the token from the first card?"), the occasional opinion ("this is the clever bit"). Never theatrical. Spoken text is for the ear: no paths or code read aloud.
 - Try it: scenarios as packet hops between cards, with the status each card shows; switches that turn off a real safety line and the scenario that shows why it matters.
 - Defend it: exactly 6 questions a reviewer would ask, with the answer, the follow-up if they push, and what breaks without it.
 
@@ -205,6 +240,7 @@ function putClaims(board: Board, claims: AnalysisClaim[]): Board {
     cards: board.cards.map((c) => ({ ...c, why: next(), say: next() })),
     tryIt: { ...board.tryIt, scenarios: board.tryIt.scenarios.map((s) => ({ ...s, result: next() })), toggles: board.tryIt.toggles.map((t) => ({ ...t, result: next() })) },
     defend: board.defend.map((d) => ({ ...d, answer: next() })),
+    steps: board.steps.map((s) => ({ ...s, beats: s.beats.map((bt) => (bt.claim ? { ...bt, claim: next() } : bt)) })),
   };
 }
 
@@ -245,10 +281,10 @@ export function cleanBoard(spec: BoardSpec, facts: Facts, root: string, flowId: 
   const ids = new Set(cards.map((c) => c.id));
   const edges = spec.edges.map((e) => ({ ...e, from: kebab(e.from), to: kebab(e.to) })).filter((e) => (ids.has(e.from) && ids.has(e.to)) || (notes.push(`dropped edge ${e.from}>${e.to}`), false));
   const edgeKeys = new Set(edges.map((e) => `${e.from}>${e.to}`));
-  const steps = spec.steps.map((s) => ({ ...s, card: ids.has(kebab(s.card)) ? kebab(s.card) : "", route: s.route.filter((r) => edgeKeys.has(r)) }));
+  const byId = new Map(cards.map((c) => [c.id, c]));
+  const steps = spec.steps.map((s, n) => cleanStep(s, byId.get(kebab(s.card)), edgeKeys, (m) => notes.push(`step ${n + 1}: ${m}`))).filter((s) => s.beats.length);
   const scenarios = spec.tryIt.scenarios.map((s) => ({ ...s, hops: s.hops.filter((h) => edgeKeys.has(h.edge)), result: pending(s.result, "behavior") })).filter((s) => s.hops.length);
   const scenarioIds = new Set(scenarios.map((s) => s.id));
-  const byId = new Map(cards.map((c) => [c.id, c]));
   const toggles = spec.tryIt.toggles.flatMap((t) => {
     const card = byId.get(kebab(t.card));
     const original = card?.lines[t.line - (card?.start ?? 0)];
@@ -260,10 +296,60 @@ export function cleanBoard(spec: BoardSpec, facts: Facts, root: string, flowId: 
     return { ...d, card: card?.id ?? "", lines: card ? d.lines.filter((n) => n >= card.start && n < card.start + card.lines.length) : [], answer: pending(d.answer, "behavior") };
   });
   return {
-    version: 1, flowId, generatedAt: new Date().toISOString(), model, status: "checking",
+    version: 2, flowId, generatedAt: new Date().toISOString(), model, status: "checking",
     title: spec.title, intro: spec.intro, pitch: spec.pitch, cards, edges, steps,
     tryIt: { intro: spec.tryIt.intro, scenarios, toggles }, defend, notes,
   };
+}
+
+/**
+ * A tour step made sound: its lines must be on its card, a point with no lines just talks, a predict needs
+ * either one right answer among its choices or lines to click (else it's asked and answered aloud), and a
+ * reveal needs a claim.
+ */
+function cleanStep(s: BoardSpec["steps"][number], card: BoardCard | undefined, edgeKeys: Set<string>, note: (m: string) => void): BoardStep {
+  const onCard = (n: number) => !!card && n >= card.start && n < card.start + card.lines.length;
+  const beats = s.beats.flatMap((b): Beat[] => {
+    const text = b.text.trim();
+    const lines = b.lines.filter(onCard);
+    const base = { text, tone: b.tone, lines: [] as number[], choices: [] as Beat["choices"], claim: null };
+    if (b.kind === "reveal") {
+      if (b.claim) return [{ ...base, kind: "reveal", text: text || b.claim.text, claim: pending(b.claim, "behavior") }];
+      note("a reveal without a claim is said instead");
+    }
+    if (!text) return [];
+    if (b.kind === "point") {
+      if (lines.length) return [{ ...base, kind: "point", lines }];
+      note("a point at lines that aren't on its card is said instead");
+    }
+    if (b.kind === "predict") {
+      const choices = b.choices.filter((c) => c.text.trim()).slice(0, 4);
+      if (choices.length >= 2 && choices.filter((c) => c.correct).length === 1) return [{ ...base, kind: "predict", choices: mix(choices, text) }];
+      if (!choices.length && lines.length) return [{ ...base, kind: "predict", lines }];
+      note("a predict with no clear answer is asked aloud instead");
+    }
+    return [{ ...base, kind: "say" }];
+  });
+  return { card: card?.id ?? "", route: s.route.filter((r) => edgeKeys.has(r)), beats };
+}
+
+/** Writers tend to put the right answer first; this moves it, the same way every time for the same question. */
+function mix<T>(choices: T[], seed: string): T[] {
+  let h = 0;
+  for (const ch of seed) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  const k = h % choices.length;
+  return [...choices.slice(k), ...choices.slice(0, k)];
+}
+
+/** Boards written before beats: each step's narration becomes one "say" beat. */
+export function upgradeBoard(b: Board): Board {
+  if (b.version === 2) return b;
+  const steps = (b.steps as unknown as { card: string; route: string[]; text?: string; beats?: Beat[] }[]).map((s) => ({
+    card: s.card,
+    route: s.route,
+    beats: s.beats ?? [{ kind: "say" as const, text: s.text ?? "", tone: (/\?\s*$/.test(s.text ?? "") ? "curious" : "calm") as BeatTone, lines: [], choices: [], claim: null }],
+  }));
+  return { ...b, version: 2, steps };
 }
 
 /** Every claim on a board, in a fixed order, so checked versions can be put back in place. */
@@ -273,6 +359,7 @@ function claimsOf(b: Board): AnalysisClaim[] {
     ...b.tryIt.scenarios.map((s) => s.result),
     ...b.tryIt.toggles.map((t) => t.result),
     ...b.defend.map((d) => d.answer),
+    ...b.steps.flatMap((s) => s.beats.flatMap((bt) => (bt.claim ? [bt.claim] : []))),
   ];
 }
 

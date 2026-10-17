@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { repoCacheDir } from "@docent/extract";
-import type { Board, FlowList } from "./board.ts";
+import { upgradeBoard, type Board, type FlowList } from "./board.ts";
 import type { ProjectOverview } from "./overview.ts";
 import type { Episode } from "./episode.ts";
 import type { FeatureAnalysis, FeatureMap } from "./types.ts";
@@ -91,7 +91,7 @@ export function saveOverview(root: string, o: ProjectOverview): void {
 }
 export function loadBoard(root: string, id: string): Board | null {
   try {
-    return JSON.parse(readFileSync(join(boardDir(root), `${id}.json`), "utf8")) as Board;
+    return upgradeBoard(JSON.parse(readFileSync(join(boardDir(root), `${id}.json`), "utf8")) as Board);
   } catch {
     return null;
   }

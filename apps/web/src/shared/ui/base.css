@@ -7,7 +7,6 @@ button { font: inherit; color: inherit; }
 ::selection { background: var(--accent-soft); }
 code, .mono { font-family: var(--mono); font-variant-ligatures: none; }
 code { font-size: .9em; background: var(--fill); padding: 1px 5px; border-radius: 5px; }
-.serif { font-family: var(--display); font-optical-sizing: auto; }
 @keyframes fade { from { opacity: 0; } }
 @keyframes rise { from { opacity: 0; transform: translateY(6px); } }
 @media (prefers-reduced-motion: reduce) {
@@ -54,12 +53,5 @@ kbd { font: 10.5px var(--mono); color: var(--ink-3); border: 1px solid var(--lin
 ::-webkit-scrollbar-corner { background: transparent; }
 
 /* buttons */
-.primary-btn { border: 0; background: var(--accent); color: var(--on-accent); padding: 9px 16px; border-radius: 999px; font-weight: 600; font-size: 13px; cursor: pointer; box-shadow: 0 2px 10px -3px color-mix(in srgb, var(--accent) 60%, transparent); transition: transform .14s var(--ease-out), filter .15s ease; }
-.primary-btn:hover { filter: brightness(1.05); }
-.primary-btn:active { transform: scale(.97); }
-.primary-btn:disabled { opacity: .6; cursor: progress; }
-.ghost-btn { border: 1px solid var(--line-2); background: var(--card); color: var(--ink); padding: 7px 14px; border-radius: 999px; font-weight: 550; font-size: 12.5px; cursor: pointer; transition: transform .14s var(--ease-out), border-color .15s ease; }
-.ghost-btn:hover { border-color: var(--ink-3); }
-.ghost-btn:active { transform: scale(.97); }
 .float { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-float); }
 

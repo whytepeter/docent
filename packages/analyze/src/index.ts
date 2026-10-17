@@ -1,5 +1,5 @@
 export { answerQuestion, type AskBox, type AskInput, type CheckedAnswer } from "./ask.ts";
-export { checkBoard, citeBoard, cleanBoard, proposeFlows, writeBoard, type Board, type BoardCard, type Flow, type FlowList } from "./board.ts";
+export { checkBoard, citeBoard, cleanBoard, proposeFlows, upgradeBoard, writeBoard, type Beat, type BeatTone, type Board, type BoardCard, type BoardStep, type Flow, type FlowList } from "./board.ts";
 export { discoverFeatures, validateDiscovery } from "./discover.ts";
 export { clean as cleanEpisode, narrationLine, writeEpisode, type Episode, type NarrationTone } from "./episode.ts";
 export { filesHash, verifyAll, verifyFeature } from "./verify.ts";

@@ -8,6 +8,7 @@ import { openCode, toHtml } from "../code/index.ts";
 import { timeLeft, useNow, useProgress } from "../jobs/index.ts";
 import { Icon, ThemeButton } from "../../shared/ui/index.ts";
 import { Chat } from "./Chat.tsx";
+import { Said } from "./Said.tsx";
 import { BoardEngine, type EngineState, type Saved } from "./engine.ts";
 import "./board.css";
 
@@ -115,7 +116,7 @@ function BoardView({ id, board, job, repoName, onHome, onSettings }: { id: strin
       caption: { title: capT.current, text: capP.current },
       onState: setEs,
       rate: () => live.current.rate,
-      voice: (at) => (live.current.speak ? api.boardVoice(id, at).catch(() => null) : Promise.resolve(null)),
+      voice: (at, beat) => (live.current.speak ? api.boardVoice(id, at, beat).catch(() => null) : Promise.resolve(null)),
       highlight,
       openCode,
       // The story bar covers the bottom in every mode; frame the board in the space above it.
@@ -207,6 +208,7 @@ function BoardView({ id, board, job, repoName, onHome, onSettings }: { id: strin
             <small ref={capT} />
             <p ref={capP} />
           </div>
+          {mode === "tour" && es?.quiz && e && <Guess board={board} es={es} engine={e} checking={checking} />}
           {mode === "defend" && es && e && <Defend board={board} es={es} engine={e} />}
         </div>
         <div className="bd-bar-ctl">
@@ -239,6 +241,45 @@ function BoardView({ id, board, job, repoName, onHome, onSettings }: { id: strin
             <Icon name="ask" size={16} /><span className="bd-ask-t">Ask</span>
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * A guess on the tour: Docent asked and waits. Pick an answer (or press 1–3), click the line on the card, or
+ * skip to the answer. Then the right one shows, and the reveal brings its label and the lines it rests on.
+ */
+function Guess({ board, es, engine, checking }: { board: Board; es: EngineState; engine: BoardEngine; checking: boolean }) {
+  const q = es.quiz!;
+  const step = board.steps[q.step];
+  const beat = step?.beats[q.beat];
+  if (!beat) return null;
+  const a = q.answer;
+  // The answer's label and lines show from the reveal on, and stay until the tour moves past the question.
+  const r = step?.beats.findIndex((b, i) => i > q.beat && b.kind === "reveal") ?? -1;
+  const reveal = r >= 0 && (es.beat === null || es.beat.i >= r) ? step?.beats[r]?.claim : null;
+  const verdict = !a ? null : a.ok === null ? null : a.ok ? "You got it." : beat.choices.length ? "Not quite." : "Not that line. Here's where it is.";
+  return (
+    <div className="bd-guess">
+      {beat.choices.length ? (
+        <div className="bd-guess-choices" role="group" aria-label="Your guess">
+          {beat.choices.map((c, i) => {
+            const state = !a ? "" : c.correct ? "right" : a.choice === i ? "wrong" : "dim";
+            return (
+              <button key={i} className={state} disabled={!!a} onClick={() => engine.answer(i)}>
+                <kbd>{i + 1}</kbd>{c.text}
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        !a && <p className="bd-guess-hint">Click the line on the card where this happens.</p>
+      )}
+      <div className="bd-guess-foot">
+        {verdict && <span className={`bd-guess-verdict ${a?.ok ? "ok" : "no"}`}>{verdict}</span>}
+        {!a && <button className="bd-guess-skip" onClick={() => engine.answer(null)}>Show me</button>}
+        {reveal && <Said claim={reveal} checking={checking} className="bare" />}
       </div>
     </div>
   );

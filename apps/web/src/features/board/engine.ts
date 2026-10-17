@@ -6,9 +6,21 @@ import type { Board, VoiceClip } from "@docent/contracts";
  */
 
 type Claim = Board["cards"][number]["why"];
+type Step = Board["steps"][number];
+export type Beat = Step["beats"][number];
 export type Mode = "tour" | "try" | "defend";
 /** Where the learner pointed for a Defend question: the exact lines, the right card, or elsewhere. */
 export type Pick = "line" | "card" | "miss";
+
+/**
+ * A tour guess: Docent asked (beat `beat` of step `step`) and waits. The answer is the choice the learner
+ * picked, or where they pointed; ok is null when they skipped to the answer.
+ */
+export interface Quiz {
+  step: number;
+  beat: number;
+  answer: { choice: number | null; ok: boolean | null } | null;
+}
 
 export interface Insets { t: number; b: number; l: number; r: number }
 
@@ -17,6 +29,9 @@ export interface EngineState {
   step: number;
   steps: number;
   playing: boolean;
+  /** The tour beat playing now (say, point, predict, reveal). */
+  beat: { i: number; kind: Beat["kind"] } | null;
+  quiz: Quiz | null;
   zoom: number;
   toggles: Record<string, boolean>;
   /** Defend it: the question on screen, whether its answer is showing, and where the learner pointed. */
@@ -37,8 +52,8 @@ export interface EngineOptions {
   /** How much of each edge the floating controls cover, for this mode. */
   insets: (mode: Mode) => Insets;
   rate: () => number;
-  /** A voice clip for a tour step, or null to read without one. */
-  voice: (at: number) => Promise<VoiceClip | null>;
+  /** A voice clip for one beat of a tour step, or null to read without one. */
+  voice: (at: number, beat: number) => Promise<VoiceClip | null>;
   /** Highlighted HTML for each line of an excerpt. */
   highlight: (lines: string[], file: string, start: number) => Promise<string[]>;
   openCode: (file: string, start?: number, end?: number) => void;
@@ -94,6 +109,8 @@ export class BoardEngine {
   private flyId = 0;
   private paused = false;
   private audio: HTMLAudioElement | null = null;
+  /** Voice clips by "step:beat", fetched one beat ahead so the teacher doesn't stall between sentences. */
+  private clips = new Map<string, Promise<VoiceClip | null>>();
   private skip = false;
   /** The card whose code is typing right now; opening all code leaves it to finish. */
   private typingId: string | null = null;
@@ -104,7 +121,7 @@ export class BoardEngine {
 
   constructor(private stage: HTMLDivElement, private board: Board, private o: EngineOptions) {
     this.s = {
-      mode: "tour", step: 0, steps: board.steps.length, playing: false, zoom: 0.5,
+      mode: "tour", step: 0, steps: board.steps.length, playing: false, beat: null, quiz: null, zoom: 0.5,
       toggles: Object.fromEntries(board.tryIt.toggles.map((t) => [t.id, true])),
       ask: { i: 0, revealed: false, pick: null }, picks: {}, defended: { ...(o.saved.defended ?? {}) },
     };
@@ -516,21 +533,25 @@ export class BoardEngine {
       if (tok !== this.tok) return;
     }
   }
-  private async openCard(id: string, tok: number, hot: number[]) {
+  /** Opens a card and types its code; its notes too, unless the tour still has questions to ask about it. */
+  private async openCard(id: string, tok: number, hot: number[], notes = true) {
     const c = this.cards.get(id);
     if (!c) return false;
     c.root.classList.add("open");
     c.head.setAttribute("aria-expanded", "true");
+    c.root.classList.toggle("hold-notes", !notes);
     if (c.typed) {
       this.renderCode(c, hot);
-      this.fillNote(c.why, c.data.why, false);
-      this.fillNote(c.say, c.data.say, false);
+      if (notes) {
+        this.fillNote(c.why, c.data.why, false);
+        this.fillNote(c.say, c.data.say, false);
+      }
       return true;
     }
     this.skip = false;
     await this.sleep(250, tok);
     if (!(await this.typeCode(c, tok, hot))) return false;
-    await this.typeNotes(c, tok);
+    if (notes) await this.typeNotes(c, tok);
     return true;
   }
   private closeCard(id: string) {
@@ -604,16 +625,37 @@ export class BoardEngine {
 
   // ---------------------------------------------------------------- tour
 
+  /** A beat's voice clip, fetched once; a failed fetch is forgotten so it can be tried again. */
+  private clip(at: number, beat: number): Promise<VoiceClip | null> {
+    const k = `${at}:${beat}`;
+    let p = this.clips.get(k);
+    if (!p) {
+      p = this.o.voice(at, beat).catch(() => null);
+      this.clips.set(k, p);
+      void p.then((c) => c || this.clips.delete(k));
+    }
+    return p;
+  }
+  /** The beat after this one, across steps. */
+  private nextBeat(at: number, beat: number): [number, number] | null {
+    if (this.board.steps[at]?.beats[beat + 1]) return [at, beat + 1];
+    return this.board.steps[at + 1]?.beats[0] ? [at + 1, 0] : null;
+  }
+
   /**
    * The caption, read at the voice's pace when there is a voice: each word appears as it's spoken.
-   * Without one it types quickly. Pausing freezes both.
+   * Without one it types quickly. Pausing freezes both. True when it was spoken.
    */
-  private async narrate(title: string, text: string, at: number | null, tok: number) {
+  private async narrate(title: string, text: string, at: { at: number; beat: number } | null, tok: number): Promise<boolean> {
     const { title: tEl, text: pEl } = this.o.caption;
     tEl.textContent = title;
-    const clip = at === null ? null : await Promise.race([this.o.voice(at), new Promise<null>((r) => setTimeout(() => r(null), 4000))]);
-    if (tok !== this.tok) return;
-    if (!clip) return this.typeText(pEl, text, tok, 14 / this.o.rate());
+    const clip = at === null ? null : await Promise.race([this.clip(at.at, at.beat), new Promise<null>((r) => setTimeout(() => r(null), 4000))]);
+    if (tok !== this.tok) return false;
+    if (at) {
+      const n = this.nextBeat(at.at, at.beat);
+      if (n) void this.clip(...n);
+    }
+    if (!clip) return (await this.typeText(pEl, text, tok, 14 / this.o.rate()), false);
     const words = text.split(/(\s+)/);
     const total = words.filter((w) => w.trim()).length;
     const audio = new Audio(clip.url);
@@ -628,7 +670,7 @@ export class BoardEngine {
     try {
       await audio.play();
     } catch {
-      return this.typeText(pEl, text, tok, 14 / this.o.rate());
+      return (await this.typeText(pEl, text, tok, 14 / this.o.rate()), false);
     }
     await new Promise<void>((res) => {
       const t = window.setInterval(() => {
@@ -649,6 +691,7 @@ export class BoardEngine {
         }
       }, 50);
     });
+    return true;
   }
 
   goStep(i: number) {
@@ -673,24 +716,31 @@ export class BoardEngine {
     return this.s.playing && this.paused;
   }
 
+  /**
+   * One tour step, taught beat by beat: the camera goes to the card (a packet carries the request there),
+   * the code types in, then Docent talks, points at lines, asks for a guess and waits, and gives the answer.
+   * The card's notes come last, so they never give an answer away before it's asked.
+   */
   private async runStep(i: number, auto: boolean) {
     const tok = ++this.tok;
     this.flyId++;
     this.audio?.pause();
-    this.set({ step: i });
+    this.set({ step: i, beat: null, quiz: null });
     this.clearEdges();
     this.world.querySelectorAll(".bd-packet").forEach((p) => p.remove());
     const st = this.board.steps[i];
     if (!st) return;
-    for (const c of this.cards.values()) c.root.classList.remove("act");
+    for (const c of this.cards.values()) c.root.classList.remove("act", "good", "bad");
     for (const id of this.cards.keys()) if (id !== st.card) this.closeCard(id);
     const card = st.card ? this.cards.get(st.card) : null;
     const title = card ? `Step ${i} of ${this.board.steps.length - 1} · ${card.data.title}` : i === 0 ? "The big picture" : "Now you can say it";
-    const voiceAt = auto || this.s.playing ? i : null;
+    const voiced = auto || this.s.playing;
+    // A step that points at lines or asks about them starts with none lit, so nothing is given away.
+    const teaches = st.beats.some((b) => b.lines.length);
+    let opened: Promise<boolean> = Promise.resolve(true);
     if (!card) {
       void this.fit();
       if (i === this.board.steps.length - 1) for (const e of this.edges.values()) e.path.classList.add("on");
-      await this.narrate(title, i === 0 && !st.text ? this.board.intro : st.text, voiceAt, tok);
     } else {
       card.root.classList.add("act");
       const fly = this.flyTo(this.fitRect(this.cardRect(card)), 1000);
@@ -708,15 +758,101 @@ export class BoardEngine {
       }
       await Promise.all([fly, seq]);
       if (tok !== this.tok) return;
-      await Promise.all([this.openCard(card.data.id, tok, card.data.hot), this.narrate(title, st.text, voiceAt, tok)]);
+      opened = this.openCard(card.data.id, tok, teaches ? [] : card.data.hot, !teaches);
+    }
+    for (const [b, beat] of st.beats.entries()) {
+      if (tok !== this.tok) return;
+      if (beat.kind !== "reveal") this.set({ quiz: null });
+      this.set({ beat: { i: b, kind: beat.kind } });
+      const at = voiced ? { at: i, beat: b } : null;
+      if (card && beat.lines.length) await this.codeTyped(card, tok);
+      if (tok !== this.tok) return;
+      if (beat.kind === "point" && card) {
+        this.mark(card, beat.lines);
+        void this.leanIn(card, beat.lines);
+      }
+      if (beat.kind === "predict") {
+        this.set({ quiz: { step: i, beat: b, answer: null } });
+        await this.narrate(title, beat.text, at, tok);
+        await this.waitAnswer(tok);
+        if (tok !== this.tok) return;
+        if (card && beat.lines.length) {
+          this.mark(card, beat.lines);
+          void this.leanIn(card, beat.lines);
+        }
+        await this.sleep(500, tok);
+        continue;
+      }
+      const spoken = await this.narrate(title, beat.text, at, tok);
+      // Without a voice, leave time to read before the next sentence replaces this one.
+      await this.sleep((spoken ? 350 : 600 + beat.text.split(/\s+/).length * 240) / this.o.rate(), tok);
     }
     if (tok !== this.tok) return;
+    if (card && teaches) {
+      await opened;
+      if (tok !== this.tok) return;
+      this.settleMarks(card);
+      void this.flyTo(this.fitRect(this.cardRect(card)), 700);
+      card.root.classList.remove("hold-notes");
+      await this.typeNotes(card, tok);
+    }
+    if (tok !== this.tok) return;
+    this.set({ beat: null });
     if (this.s.playing) {
       await this.sleep(700 / this.o.rate(), tok);
       if (tok !== this.tok) return;
       if (i < this.board.steps.length - 1) void this.runStep(i + 1, true);
       else this.set({ playing: false });
     }
+  }
+
+  /** Waits until the card's code has typed in, so its lines can be pointed at. */
+  private async codeTyped(c: CardEl, tok: number) {
+    while (!c.typed && tok === this.tok) await this.sleep(50, tok);
+  }
+  /** Docent's hand on the board: these lines get a marker stroke; lines marked earlier in the step stay lit. */
+  private mark(c: CardEl, lines: number[]) {
+    this.settleMarks(c);
+    for (const n of lines) c.code.querySelector(`.bd-ln[data-i="${n - c.data.start}"]`)?.classList.add("pt");
+  }
+  private settleMarks(c: CardEl) {
+    c.code.querySelectorAll(".bd-ln.pt").forEach((r) => r.classList.replace("pt", "hot"));
+  }
+  /** Leans the camera in on a few lines of a card, as you'd step closer to the whiteboard. */
+  private leanIn(c: CardEl, lines: number[]) {
+    const rows = lines.map((n) => c.code.querySelector<HTMLElement>(`.bd-ln[data-i="${n - c.data.start}"]`)).filter((r): r is HTMLElement => !!r);
+    if (!rows.length) return Promise.resolve();
+    const top0 = c.root.getBoundingClientRect().top;
+    const k = this.cam.k;
+    const top = c.y + (Math.min(...rows.map((r) => r.getBoundingClientRect().top)) - top0) / k;
+    const bottom = c.y + (Math.max(...rows.map((r) => r.getBoundingClientRect().bottom)) - top0) / k;
+    const h = Math.max(320, bottom - top + 220);
+    return this.flyTo(this.fitRect({ x: c.x - 60, y: (top + bottom) / 2 - h / 2, w: W + 120, h }), 700);
+  }
+  /** Holds the tour on a question until the learner answers it (or skips). */
+  private async waitAnswer(tok: number) {
+    while (tok === this.tok && this.s.quiz && !this.s.quiz.answer) await new Promise((r) => setTimeout(r, 50));
+  }
+  /** The learner's guess for the question on screen: a choice, or null to skip to the answer. */
+  answer(choice: number | null) {
+    const q = this.s.quiz;
+    const beat = q && this.board.steps[q.step]?.beats[q.beat];
+    if (!q || !beat || q.answer) return;
+    this.set({ quiz: { ...q, answer: { choice, ok: choice === null ? null : !!beat.choices[choice]?.correct } } });
+  }
+  /** A question answered by pointing, waiting for a click on a line. */
+  private wantsLine() {
+    const q = this.s.quiz;
+    return this.s.mode === "tour" && !!q && !q.answer && !!this.board.steps[q.step]?.beats[q.beat]?.lines.length;
+  }
+  /** The learner pointed: right if it's one of the lines the answer lives on. */
+  private guessLine(cardId: string, line: number | null) {
+    const q = this.s.quiz!;
+    const st = this.board.steps[q.step]!;
+    const ok = cardId === st.card && line !== null && st.beats[q.beat]!.lines.includes(line);
+    if (!ok) this.cards.get(cardId)?.root.classList.add("bad");
+    else this.cards.get(cardId)?.root.classList.add("good");
+    this.set({ quiz: { ...q, answer: { choice: null, ok } } });
   }
 
   // ---------------------------------------------------------------- try it
@@ -882,7 +1018,8 @@ export class BoardEngine {
     this.flyId++;
     this.paused = false;
     this.audio?.pause();
-    this.set({ mode: m, playing: false });
+    this.set({ mode: m, playing: false, beat: null, quiz: null });
+    for (const c of this.cards.values()) c.root.classList.remove("hold-notes");
     this.clearEdges();
     this.clearMarks();
     this.stage.dataset.mode = m;
@@ -909,6 +1046,7 @@ export class BoardEngine {
     if (!entry) return;
     // In Defend it, clicking a card is the answer: "this is where I'd look".
     if (this.s.mode === "defend") return this.pick(entry.data.id, line);
+    if (this.wantsLine()) return this.guessLine(entry.data.id, line);
     if (root.classList.contains("open")) return this.closeCard(entry.data.id);
     const tok = ++this.tok;
     void this.openCard(entry.data.id, tok, this.hotFor(entry));
@@ -937,8 +1075,8 @@ export class BoardEngine {
         return;
       }
       const head = t.closest<HTMLElement>(".bd-head");
-      // In Defend it, the code of a card counts as pointing at it too.
-      const point = this.s.mode === "defend" ? t.closest<HTMLElement>(".bd-card") : null;
+      // In Defend it, and when the tour asks where something happens, the code of a card counts as pointing at it.
+      const point = this.s.mode === "defend" || this.wantsLine() ? t.closest<HTMLElement>(".bd-card") : null;
       const card = head?.parentElement ?? point;
       const item = card ?? sEl;
       const ln = t.closest<HTMLElement>(".bd-ln");
@@ -1017,7 +1155,10 @@ export class BoardEngine {
         return this.clickCard(h.parentElement);
       }
       if (t.closest?.("button")) return;
-      if (e.key === " " && this.s.mode === "tour") (e.preventDefault(), this.play());
+      const q = this.s.quiz;
+      const choices = q && !q.answer ? this.board.steps[q.step]?.beats[q.beat]?.choices ?? [] : [];
+      if (/^[1-9]$/.test(e.key) && Number(e.key) <= choices.length) this.answer(Number(e.key) - 1);
+      else if (e.key === " " && this.s.mode === "tour") (e.preventDefault(), this.play());
       else if (e.key === "ArrowRight" && this.s.mode === "tour") this.goStep(this.s.step + 1);
       else if (e.key === "ArrowLeft" && this.s.mode === "tour") this.goStep(this.s.step - 1);
       else if (e.key.toLowerCase() === "f" && !e.metaKey && !e.ctrlKey) void this.fit(600);

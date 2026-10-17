@@ -66,7 +66,7 @@ export function viewContext(root: string, index: GraphIndex, route: Route): stri
       const step = route.step !== undefined ? b.steps[route.step] : undefined;
       const focus = route.card ?? step?.card;
       out.push(`A whiteboard that explains one flow: "${b.title}". ${b.intro}`);
-      if (step) out.push(`They're on tour step ${route.step! + 1} of ${b.steps.length}: "${step.text}"`);
+      if (step) out.push(`They're on tour step ${route.step! + 1} of ${b.steps.length}, where Docent says: "${step.beats.map((bt) => bt.text).join(" ")}"`);
       out.push("", "The cards on the board, in the order a request meets them (id — title — file:lines — what it does):");
       for (const c of b.cards) out.push(`- ${c.id} — ${c.title} — ${c.file}:${c.start}-${c.start + c.lines.length - 1} — ${c.role}`);
       const f = b.cards.find((c) => c.id === focus);
