@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { Settings, VoiceOption, VoiceProvider } from "@docent/contracts";
+import type { CloudVoiceProvider, LocalModel, LocalVoiceProvider, Settings, VoiceOption, VoiceProvider } from "@docent/contracts";
 import { api } from "../../shared/api/client.ts";
 import { invalidateAll } from "../../shared/api/useQuery.ts";
 import { useStore } from "../../shared/state/store.ts";
@@ -7,10 +7,63 @@ import { themeStore, type Theme } from "../../shared/state/theme.ts";
 import { Icon } from "../../shared/ui/index.ts";
 import "./settings.css";
 
-const PROVIDERS: { id: VoiceProvider; name: string; keyUrl: string }[] = [
+const CLOUD: { id: CloudVoiceProvider; name: string; keyUrl: string }[] = [
   { id: "cartesia", name: "Cartesia", keyUrl: "https://play.cartesia.ai/keys" },
   { id: "fish-audio", name: "Fish Audio", keyUrl: "https://fish.audio/app/api-keys/" },
 ];
+const LOCAL: { id: LocalVoiceProvider; name: string; about: string }[] = [
+  { id: "kokoro", name: "Kokoro", about: "Kokoro 82M, open weights (Apache-2.0). 28 English voices, American and British." },
+];
+const isLocal = (p: VoiceProvider): p is LocalVoiceProvider => LOCAL.some((l) => l.id === p);
+const mb = (bytes: number) => `${Math.round(bytes / 1e6)} MB`;
+
+/**
+ * A voice model that runs on this computer: download it (with progress), stop, or remove it.
+ * While a download runs the panel asks for progress twice a second; when it lands, settings refresh.
+ */
+function LocalModelCard({ about, model, onChange, onSettings }: { about: string; model: LocalModel; onChange: (m: LocalModel) => void; onSettings: (s: Settings) => void }) {
+  const [error, setError] = useState<string | null>(null);
+  const downloading = model.state === "downloading";
+  useEffect(() => {
+    if (!downloading) return;
+    const t = setInterval(() => {
+      api.model().then((m) => {
+        onChange(m);
+        if (m.state === "ready") void api.settings().then(onSettings);
+      }, (e: Error) => setError(e.message));
+    }, 500);
+    return () => clearInterval(t);
+  }, [downloading]);
+  const pct = Math.min(100, Math.round((model.received / Math.max(1, model.size)) * 100));
+  const act = (p: Promise<unknown>) => (setError(null), p.catch((e: Error) => setError(e.message)));
+  return (
+    <div className="set-model">
+      <p className="set-hint">{about}</p>
+      {model.state === "ready" ? (
+        <div className="set-key-row">
+          <span className="set-saved"><Icon name="check" size={13} weight="bold" />Downloaded<code>{mb(model.size)} · works offline</code></span>
+          <button className="tbtn" onClick={() => void act(api.removeModel().then(onSettings))}>Remove</button>
+        </div>
+      ) : downloading ? (
+        <div className="set-key-row">
+          <div className="set-progress" role="progressbar" aria-label="Downloading the voice" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}>
+            <span style={{ width: `${pct}%` }} />
+            <em>{mb(model.received)} of {mb(model.size)}</em>
+          </div>
+          <button className="tbtn" onClick={() => void act(api.removeModel().then(onSettings))}>Stop</button>
+        </div>
+      ) : (
+        <div className="set-key-row">
+          <button className="set-btn set-btn-icon" onClick={() => void act(api.downloadModel().then(onChange))}>
+            <Icon name="download" size={14} weight="bold" />{model.state === "error" ? "Try again" : "Download"} · {mb(model.size)}
+          </button>
+          <span className="set-hint">From Hugging Face, kept in <code>~/.docent/models</code></span>
+        </div>
+      )}
+      {(error ?? model.error) && <p className="set-error" role="alert">{error ?? model.error}</p>}
+    </div>
+  );
+}
 
 /**
  * A key field that never shows the key: a masked hint of what's saved, and a password field to replace it.
@@ -64,7 +117,7 @@ function VoicePicker({ settings, onChange }: { settings: Settings; onChange: (s:
   const [playing, setPlaying] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const audio = useRef<HTMLAudioElement | null>(null);
-  const hasKey = !!settings.voice.keys[provider];
+  const hasKey = isLocal(provider) ? settings.voice.local[provider].state === "ready" : !!settings.voice.keys[provider];
 
   useEffect(() => {
     if (!hasKey) return setList(null);
@@ -102,7 +155,7 @@ function VoicePicker({ settings, onChange }: { settings: Settings; onChange: (s:
     }
   };
 
-  if (!hasKey) return <p className="set-hint">Add the key above to choose a voice.</p>;
+  if (!hasKey) return <p className="set-hint">{isLocal(provider) ? "Download the voice above to choose one." : "Add the key above to choose a voice."}</p>;
   const current = list?.find((v) => v.id === chosen);
   return (
     <div className="set-voices">
@@ -182,6 +235,8 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const [s, setS] = useState<Settings | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("narrator");
+  /** Which kind of voice the narrator tab shows; follows the chosen provider until you switch. */
+  const [kind, setKind] = useState<"cloud" | "local" | null>(null);
   const theme = useStore(themeStore);
   useEffect(() => {
     api.settings().then(setS, (e: Error) => setError(e.message));
@@ -199,6 +254,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
     invalidateAll();
   };
   const fail = (e: Error) => setError(e.message);
+  const shown = kind ?? (s && isLocal(s.voice.provider) ? "local" : "cloud");
 
   return (
     <div className="settings-over" onClick={(e) => e.target === e.currentTarget && onClose()}>
@@ -218,24 +274,58 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
           {!s && !error && tab !== "appearance" && <p className="set-hint">Loading…</p>}
           {s && tab === "narrator" && (
             <>
-              <header className="set-h"><h3>Narrator</h3><p>The voice that reads the tour. Only the narration text is sent to the voice service.</p></header>
+              <header className="set-h">
+                <h3>Narrator</h3>
+                <p>{isLocal(s.voice.provider) ? "The voice that reads the tour. It runs on this computer, so nothing is sent anywhere." : "The voice that reads the tour. Only the narration text is sent to the voice service."}</p>
+              </header>
               <div className="set-group">
-                <div className="set-label">Voice service</div>
-                <div className="set-tiles" role="radiogroup" aria-label="Voice service">
-                  {PROVIDERS.map((p) => (
-                    <button key={p.id} role="radio" aria-checked={s.voice.provider === p.id} onClick={() => void api.setVoice({ provider: p.id }).then(update, fail)}>
-                      <b>{p.name}</b>
-                      <span className={s.voice.keys[p.id] ? "ok" : ""}>{s.voice.keys[p.id] ? "Key saved" : "No key yet"}</span>
-                    </button>
-                  ))}
+                <div className="set-line set-kind">
+                  <span><b>Voice service</b><small>{shown === "cloud" ? "Best quality; needs a key and a connection" : "Free and offline after a one-time download"}</small></span>
+                  <div className="set-seg" role="radiogroup" aria-label="Kind of voice">
+                    {([["cloud", "Cloud", "cloud"], ["local", "On this computer", "local"]] as const).map(([id, name, icon]) => (
+                      <button key={id} role="radio" aria-checked={shown === id} onClick={() => setKind(id)}><Icon name={icon} size={14} />{name}</button>
+                    ))}
+                  </div>
                 </div>
-                {PROVIDERS.filter((p) => p.id === s.voice.provider).map((p) => (
-                  <KeyField key={p.id} label={`${p.name} API key`} saved={s.voice.keys[p.id]} url={p.keyUrl} onSave={async (k) => update(await api.setKey(p.id, k))} />
-                ))}
+                {shown === "cloud" ? (
+                  <>
+                    <div className="set-tiles" role="radiogroup" aria-label="Cloud voice service">
+                      {CLOUD.map((p) => (
+                        <button key={p.id} role="radio" aria-checked={s.voice.provider === p.id} onClick={() => void api.setVoice({ provider: p.id }).then(update, fail)}>
+                          <b>{p.name}</b>
+                          <span className={s.voice.keys[p.id] ? "ok" : ""}>{s.voice.keys[p.id] ? "Key saved" : "No key yet"}</span>
+                        </button>
+                      ))}
+                    </div>
+                    {CLOUD.filter((p) => p.id === s.voice.provider).map((p) => (
+                      <KeyField key={p.id} label={`${p.name} API key`} saved={s.voice.keys[p.id]} url={p.keyUrl} onSave={async (k) => update(await api.setKey(p.id, k))} />
+                    ))}
+                  </>
+                ) : (
+                  <>
+                    <div className="set-tiles" role="radiogroup" aria-label="Local voice">
+                      {LOCAL.map((p) => {
+                        const m = s.voice.local[p.id];
+                        return (
+                          <button key={p.id} role="radio" aria-checked={s.voice.provider === p.id} onClick={() => void api.setVoice({ provider: p.id }).then(update, fail)}>
+                            <b>{p.name}</b>
+                            <span className={m.state === "ready" ? "ok" : ""}>{m.state === "ready" ? "Downloaded" : m.state === "downloading" ? "Downloading…" : `${mb(m.size)} download`}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {LOCAL.filter((p) => p.id === s.voice.provider).map((p) => (
+                      <LocalModelCard key={p.id} about={p.about} model={s.voice.local[p.id]} onSettings={update}
+                        onChange={(m) => setS((cur) => cur && { ...cur, voice: { ...cur.voice, local: { ...cur.voice.local, [p.id]: m } } })} />
+                    ))}
+                  </>
+                )}
               </div>
               <div className="set-group">
                 <div className="set-label">Voice</div>
-                <VoicePicker settings={s} onChange={update} />
+                {(shown === "local") === isLocal(s.voice.provider)
+                  ? <VoicePicker settings={s} onChange={update} />
+                  : <p className="set-hint">The narrator is still {[...CLOUD, ...LOCAL].find((p) => p.id === s.voice.provider)?.name}. Pick a service above to switch; each keeps its own voice.</p>}
               </div>
               <div className="set-group">
                 <div className="set-label">Delivery</div>
