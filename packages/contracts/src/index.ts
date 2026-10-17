@@ -242,7 +242,18 @@ export interface VoiceOption {
   own: boolean;
 }
 
-export type VoiceProvider = "cartesia" | "fish-audio";
+/** Cloud voices need an API key; local ones run on this computer once downloaded. */
+export type CloudVoiceProvider = "cartesia" | "fish-audio";
+export type LocalVoiceProvider = "kokoro";
+export type VoiceProvider = CloudVoiceProvider | LocalVoiceProvider;
+
+/** A downloadable voice model: whether it's on disk, and how far a download has got (bytes). */
+export interface LocalModel {
+  state: "absent" | "downloading" | "ready" | "error";
+  received: number;
+  size: number;
+  error?: string;
+}
 
 /** Everything the Settings panel shows. Keys come back only as masked hints. */
 export interface Settings {
@@ -251,7 +262,8 @@ export interface Settings {
     voices: Partial<Record<VoiceProvider, string>>;
     speed: number;
     expressive: boolean;
-    keys: Record<VoiceProvider, string | null>;
+    keys: Record<CloudVoiceProvider, string | null>;
+    local: Record<LocalVoiceProvider, LocalModel>;
     /** Your own entries (term → how to say it); `defaults` apply underneath. */
     pronunciations: Record<string, string>;
     defaults: Record<string, string>;

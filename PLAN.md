@@ -38,7 +38,7 @@ docent/
     ├── extract/                stage 1: facts from code, git and docs (no LLM)
     ├── analyze/                Claude stages: features, verify, flows, boards, overview, ask, the checks
     ├── llm/                    Claude Code (subscription) or the API behind one interface
-    ├── voice/                  Cartesia and Fish Audio adapters
+    ├── voice/                  Cartesia and Fish Audio (cloud), Kokoro (local, downloaded to ~/.docent/models)
     ├── contracts/              types shared by server and app
     └── cli/                    `docent <repo>`: starts the server, opens the browser
 ```
