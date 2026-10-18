@@ -138,6 +138,10 @@ async function importRuntime<T>(name: keyof typeof RUNTIME): Promise<T> {
 /** Installs the runtime packages into Docent's model folder with npm (never into a repo). */
 async function installRuntime(signal: AbortSignal): Promise<void> {
   mkdirSync(runtimeDir(), { recursive: true });
+  // An install without this computer's native build (another version, or files gone) looks complete to npm:
+  // remove it so npm puts the right one back.
+  const ort = join(runtimeDir(), "node_modules", "onnxruntime-node");
+  if (existsSync(ort) && !hasBinding(join(ort, "dist", "index.js"))) rmSync(ort, { recursive: true, force: true });
   writeFileSync(join(runtimeDir(), "package.json"), JSON.stringify({ private: true, dependencies: RUNTIME }));
   const npm = process.platform === "win32" ? "npm.cmd" : "npm";
   await promisify(execFile)(npm, ["install", "--omit=dev", "--no-audit", "--no-fund"], { cwd: runtimeDir(), signal, shell: process.platform === "win32" });
@@ -177,7 +181,10 @@ export function downloadKokoro(): ModelStatus {
   download = job;
   void (async () => {
     try {
-      if (!runtimeReady()) await installRuntime(job.abort.signal);
+      if (!runtimeReady()) {
+        await installRuntime(job.abort.signal);
+        if (!runtimeReady()) throw new VoiceError(`onnxruntime installed, but without a build for ${platformLabel()}`);
+      }
       for (const file of FILES) {
         const to = join(modelDir(), file);
         if (existsSync(to)) continue;
