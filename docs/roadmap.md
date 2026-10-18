@@ -243,6 +243,14 @@ The map-and-inspector screens gave way to one idea: pick a flow of the codebase,
 - **Faster (Oct 17).** The board writer gets the flow's files in its prompt, numbered, instead of opening each one with a tool (a board on the test app: 188 s → 126 s). The second reader runs at low effort in batches of 6 claims, 3 at once, everywhere it's used (board double-check about 70 s → 15 s; chat about 23 s → 6.5 s), and still refutes what it should. Chat answers on a board are kept on disk per board (`~/.docent/repos/<repo>/answers/`), valid while the board and the commit are unchanged: a repeated question is answered at once, and the conversation comes back after a reload.
 - No reading holds between cards (tried and rejected: the learner pauses when they want to read). The open card sits above the cards it grows over. The code sheet is always dark, like the code on the cards.
 
+**The tour explains better (Oct 18):** boards are version 4; older ones open as before, without the new state list or labels on their points.
+- **Every point is labeled.** A point beat carries a claim with evidence on the lines it marks, checked like reveals; a point the writer left unclaimed shows as inferred. Say beats only set the scene, connect steps or explain a term.
+- **Values must fit their line.** A value written beside a line is dropped when the line names neither it nor its value (`status = "starting"` fits `setStatus("starting")`; `attempt = 2` doesn't fit `const n = retries + 1`).
+- **The example so far.** Each intro and flow step records what the example holds once it has run (an id, a flag, a status); a small list beside the board builds up as the tour goes, new and changed things flash, and the close keeps the last one. It's open where there's room (the camera frames cards beside it) and folded to a pill elsewhere.
+- **The packet says what it carries** on each link ("selfie.jpg file", "file + idempotency key").
+- **One analogy, and terms explained.** The intro tells one everyday analogy, marked as an analogy rather than a claim; a framework or domain term gets one plain sentence the first time it comes up.
+- **Examples from the repo's tests.** The writer gets the flow's tests (the two with the most links to its files). An example taken from one is cited, and the intro says whether the example comes from the tests or is made up. Checked on the test app's selfie flow: the example came from its submission test, labeled confirmed, and all 13 points were confirmed.
+
 **Naming (Oct 18, user decision):** a flow's whiteboard is a **board**; the tour is what you take through it.
 
 **Backlog:** none open. The drawing screen has its own stop button, and chat answers are kept on disk per board (see "Faster" above).

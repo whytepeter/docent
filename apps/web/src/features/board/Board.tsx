@@ -22,13 +22,14 @@ const PART: Record<Board["steps"][number]["part"], string> = {
 /**
  * What the example holds so far, beside the board: it builds up from the intro through the flow (new and changed
  * things flash), stays as it ended for the close, and steps aside while a failure or a reviewer's question plays.
- * Folded on a narrow screen until opened.
+ * Open where the board has room beside it (the camera then frames cards to its right); folded to a pill
+ * elsewhere until opened.
  */
 function Holding({ board, at }: { board: Board; at: number }) {
   const st = board.steps[at];
   const last = [...board.steps].reverse().find((s) => s.state.length);
   const held = st?.part === "intro" || st?.part === "flow" ? st.state : st?.part === "close" ? last?.state.map((h) => ({ ...h, change: "same" as const })) ?? [] : [];
-  const [open, setOpen] = useState(() => !matchMedia("(max-width: 700px)").matches);
+  const [open, setOpen] = useState(() => matchMedia("(min-width: 1100px)").matches);
   if (!held.length) return null;
   return (
     <details className="bd-fl bd-held" open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
@@ -180,8 +181,9 @@ function BoardView({ id, board, job, repoName, onHome, onSettings }: { id: strin
       insets: () => {
         const nar = narrow();
         const bar = document.querySelector<HTMLElement>(".bd-bar")?.offsetHeight ?? 120;
-        // The open chat takes the right side; frame the board in what's left.
-        return { t: 70, b: bar + 32, l: nar ? 16 : 40, r: nar ? 16 : live.current.chat ? 440 : 40 };
+        // The open chat takes the right side, and the example's list (open only where there's room) the left; frame the board in what's left.
+        const held = document.querySelector<HTMLElement>(".bd-held[open]")?.getBoundingClientRect().right ?? 0;
+        return { t: 70, b: bar + 32, l: nar ? 16 : Math.max(40, held + 16), r: nar ? 16 : live.current.chat ? 440 : 40 };
       },
       saved: loadSaved(id, board),
       // Pick up where you stopped, unless you'd finished (then it starts over) or the board was drawn again.
