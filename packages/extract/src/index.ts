@@ -11,7 +11,7 @@ export { loadCachedFacts, repoCacheDir, saveFacts } from "./cache.ts";
 export { git, isGitRepo, listPaths } from "./repo.ts";
 export { findDuplicates } from "./duplicates.ts";
 
-const TS_LANGS = new Set(["ts", "tsx", "js", "jsx"]);
+const TS_LANGS = new Set(["ts", "tsx", "js", "jsx", "vue", "svelte"]);
 
 export interface ExtractOptions {
   onStage?: (stage: string) => void;
@@ -52,6 +52,8 @@ export function extract(repoPath: string, { onStage = () => {} }: ExtractOptions
   }
 
   const imported = new Set(graph.imports.map((i) => i.to).filter(Boolean));
+  // Components a template renders without importing them (auto-imports) are used too.
+  for (const e of graph.edges) if (e.kind === "renders" && e.file !== e.to.split("#")[0]) imported.add(e.to.split("#")[0]!);
   const entryFiles = new Set(entries.map((e) => e.file));
   const unreferenced = files
     .filter((f) => f.kind === "source" && !imported.has(f.path) && !entryFiles.has(f.path) && !f.path.endsWith(".d.ts"))

@@ -1,7 +1,7 @@
 import { createHighlighter, type BundledTheme, type Highlighter } from "shiki";
 import { editorThemeStore } from "./editor-theme.ts";
 
-const LANGS = ["ts", "tsx", "js", "jsx", "json", "md", "html", "css", "vue", "yaml"] as const;
+const LANGS = ["ts", "tsx", "js", "jsx", "json", "md", "html", "css", "vue", "svelte", "yaml"] as const;
 let instance: Promise<Highlighter> | null = null;
 
 export const highlighter = () =>

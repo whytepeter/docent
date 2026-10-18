@@ -1,7 +1,8 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { Node, Project, SyntaxKind, ts, type SourceFile } from "ts-morph";
 import { isTestPath } from "./repo.ts";
+import { autoImportNames, componentName, isViewPath, pascal, realPath, scriptView, sfcKind, templateRefs, viewPath } from "./sfc.ts";
 import type { Confidence, EdgeFact, ImportFact, SymbolFact, SymbolKind, TestFact } from "./types.ts";
 
 /** Wrappers whose function argument is still "the" named function: `const f = useCallback(() => …)`. */
@@ -25,7 +26,11 @@ export function loadProject(root: string, files: string[]): Project {
     skipFileDependencyResolution: true,
     compilerOptions: { allowJs: true, jsx: ts.JsxEmit.ReactJSX, noEmit: true },
   });
-  for (const file of files) project.addSourceFileAtPath(join(root, file));
+  for (const file of files) {
+    // A Vue or Svelte component goes in as its script view, `Foo.vue.ts`, with its lines where they are in Foo.vue.
+    if (sfcKind(file)) project.createSourceFile(viewPath(join(root, file)), scriptView(readFileSync(join(root, file), "utf8")), { overwrite: true });
+    else project.addSourceFileAtPath(join(root, file));
+  }
   project.resolveSourceFileDependencies();
   return project;
 }
@@ -90,7 +95,7 @@ function isExported(anchor: Node): boolean {
 }
 
 export function buildGraph(project: Project, root: string): Graph {
-  const rel = (sf: SourceFile) => relative(root, sf.getFilePath());
+  const rel = (sf: SourceFile) => realPath(relative(root, sf.getFilePath()));
   const inRepo = (sf: SourceFile) => !sf.getFilePath().includes(`${sep}node_modules${sep}`) && !sf.isDeclarationFile() && sf.getFilePath().startsWith(root);
 
   const symbols: SymbolFact[] = [];
@@ -162,6 +167,17 @@ export function buildGraph(project: Project, root: string): Graph {
       }
     });
   }
+  // A Vue or Svelte component is one symbol for the whole file: its script's top level is the component's body.
+  const components = new Map<string, string>(); // file → component symbol id
+  for (const sf of repoFiles) {
+    if (!isViewPath(sf.getFilePath())) continue;
+    const file = rel(sf);
+    const id = `${file}#${componentName(file)}`;
+    components.set(file, id);
+    if (!symbols.some((s) => s.id === id)) {
+      symbols.push({ id, name: componentName(file), kind: "component", file, range: { start: 1, end: sf.getEndLineNumber() }, exported: true, parent: null });
+    }
+  }
   const symbolIds = new Set(symbols.map((s) => s.id));
 
   // ---- helpers for pass 2
@@ -176,7 +192,7 @@ export function buildGraph(project: Project, root: string): Graph {
         if (init && (Node.isArrowFunction(init) || Node.isFunctionExpression(init) || Node.isCallExpression(init))) return fn;
       }
     }
-    return `${file}#<module>`;
+    return components.get(file) ?? `${file}#<module>`;
   };
 
   type Target = { id: string; confidence: Confidence; via?: string } | null;
@@ -198,10 +214,13 @@ export function buildGraph(project: Project, root: string): Graph {
     }
     const id = byNode.get(node) ?? (Node.isVariableDeclaration(node) ? byNode.get(node) : undefined);
     if (id) return { id, confidence: "confirmed" };
+    // `import Foo from "./Foo.vue"`: the component itself (a `<script setup>` has no default export to point at).
+    const component = components.get(rel(sf));
+    if (component && (Node.isSourceFile(node) || Node.isExportAssignment(node))) return { id: component, confidence: "confirmed" };
     if (Node.isPropertySignature(node) || Node.isMethodSignature(node)) {
       const owner = node.getParent();
       const ownerName = owner && (Node.isInterfaceDeclaration(owner) ? owner.getName() : Node.isTypeLiteral(owner) ? owner.getParent()?.getSymbol()?.getName() : undefined);
-      return { id: `${relative(root, sf.getFilePath())}#${ownerName ?? "?"}.${node.getName()}`, confidence: "inferred", via: "interface member; implementation not traced" };
+      return { id: `${realPath(relative(root, sf.getFilePath()))}#${ownerName ?? "?"}.${node.getName()}`, confidence: "inferred", via: "interface member; implementation not traced" };
     }
     return null;
   };
@@ -304,6 +323,8 @@ export function buildGraph(project: Project, root: string): Graph {
     });
   }
 
+  templateEdges(root, repoFiles.filter((sf) => isViewPath(sf.getFilePath())).map(rel), components, symbols, imports, edges, seen);
+
   for (const edge of edges) {
     if (edge.confidence === "confirmed" && !symbolIds.has(edge.to)) {
       edge.confidence = "inferred";
@@ -316,4 +337,55 @@ export function buildGraph(project: Project, root: string): Graph {
 function assetPath(root: string, from: string, spec: string): string | null {
   const base = spec.startsWith("@/") || spec.startsWith("~/") ? join(root, "src", spec.slice(2)) : spec.startsWith("/") ? join(root, spec) : join(root, from, "..", spec);
   return existsSync(base) ? relative(root, base) : null;
+}
+
+/**
+ * What a component's template does, as edges: the components it renders (through its imports, or by name for
+ * auto-imported ones, as Nuxt and unplugin-vue-components do), and the script functions its handlers and
+ * bindings use.
+ */
+function templateEdges(root: string, files: string[], components: Map<string, string>, symbols: SymbolFact[], imports: ImportFact[], edges: EdgeFact[], seen: Set<string>): void {
+  const byName = new Map<string, string[]>(); // component name → component ids, for auto-imports
+  for (const [file, id] of components) {
+    for (const name of autoImportNames(file)) byName.set(name, [...(byName.get(name) ?? []), id]);
+  }
+  const add = (edge: EdgeFact) => {
+    const key = `${edge.from}|${edge.to}|${edge.kind}|${edge.line}`;
+    if (seen.has(key) || edge.from === edge.to) return;
+    seen.add(key);
+    edges.push(edge);
+  };
+  for (const file of files) {
+    const kind = sfcKind(file)!;
+    const from = components.get(file)!;
+    const { tags, names } = templateRefs(kind, readFileSync(join(root, file), "utf8"));
+    // Local names this file imports, and where they lead.
+    const imported = new Map<string, string>();
+    for (const imp of imports) {
+      if (imp.from !== file || !imp.to) continue;
+      for (const n of imp.names) imported.set(n, imp.to);
+    }
+    const target = (name: string): string | null => {
+      const to = imported.get(name);
+      if (to) return components.get(to) ?? symbols.find((s) => s.file === to && (s.name === name || s.kind === "component") && !s.parent)?.id ?? null;
+      return null;
+    };
+    for (const tag of tags) {
+      if (/^[a-z]+$/.test(tag.name) && !tag.name.includes("-")) continue; // plain HTML elements
+      const name = tag.name.includes("-") || /^[a-z]/.test(tag.name) ? pascal(tag.name) : tag.name.split(".")[0]!;
+      const direct = target(tag.name) ?? target(name);
+      if (direct) {
+        add({ from, to: direct, kind: "renders", file, line: tag.line, confidence: "confirmed" });
+        continue;
+      }
+      const byFile = byName.get(name) ?? [];
+      if (byFile.length === 1) add({ from, to: byFile[0]!, kind: "renders", file, line: tag.line, confidence: "inferred", via: "not imported; matched by file name (auto-imported component)" });
+    }
+    // Script functions the template uses: `@click="save"`, `on:click={save}`, `{format(date)}`.
+    const own = new Map(symbols.filter((s) => s.file === file && !s.parent && (s.kind === "function" || s.kind === "method")).map((s) => [s.name, s.id]));
+    for (const n of names) {
+      const to = own.get(n.name) ?? (imported.has(n.name) ? target(n.name) : null);
+      if (to && to !== from) add({ from, to, kind: "calls", file, line: n.line, confidence: "confirmed", via: "used in the template" });
+    }
+  }
 }

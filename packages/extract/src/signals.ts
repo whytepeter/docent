@@ -134,7 +134,7 @@ export function scanSource(root: string, files: FileFact[]) {
 
 const STACK_DEPS: Record<string, string> = {
   react: "React", vue: "Vue", nuxt: "Nuxt", next: "Next.js", svelte: "Svelte", "@sveltejs/kit": "SvelteKit",
-  vite: "Vite", express: "Express", hono: "Hono", fastify: "Fastify", "@nestjs/core": "NestJS",
+  vite: "Vite", express: "Express", hono: "Hono", fastify: "Fastify", "@nestjs/core": "NestJS", "@angular/core": "Angular",
   vitest: "Vitest", jest: "Jest", "@playwright/test": "Playwright", zustand: "Zustand", pinia: "Pinia",
   tailwindcss: "Tailwind", "@tailwindcss/vite": "Tailwind", prisma: "Prisma", "drizzle-orm": "Drizzle",
   graphql: "GraphQL", "@apollo/client": "Apollo", i18next: "i18next", "react-router": "React Router", "react-router-dom": "React Router",
