@@ -73,8 +73,38 @@ const manifest = () => join(modelDir(), "manifest.json");
  * The packages that run the model. onnxruntime-node weighs about 290 MB, so it isn't part of Docent's own
  * install: a checkout has it from the workspace, and an npm install gets it here, with the weights.
  */
-const RUNTIME = { "onnxruntime-node": "1.30.0", phonemizer: "1.2.1" } as const;
+const RUNTIME = { "onnxruntime-node": ortVersion(), phonemizer: "1.2.1" };
 const runtimeDir = () => join(modelDir(), "runtime");
+
+/**
+ * onnxruntime-node ships native builds for these platforms only. Intel Macs were dropped after 1.23.2, so
+ * they get that version (Node built for Intel and run under Rosetta counts as an Intel Mac).
+ */
+const ORT_BUILDS = new Set(["darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64", "win32-x64", "win32-arm64"]);
+function platform(): string {
+  return `${process.platform}-${process.arch}`;
+}
+function ortVersion(): string {
+  return platform() === "darwin-x64" ? "1.23.2" : "1.30.0";
+}
+/** Whether the local voice can run here at all. */
+export const kokoroSupported = () => ORT_BUILDS.has(platform()) && !musl();
+/** onnxruntime's Linux builds need glibc; Alpine and other musl systems can't load them. */
+function musl(): boolean {
+  if (process.platform !== "linux") return false;
+  const header = (process.report?.getReport() as { header?: { glibcVersionRuntime?: string } } | undefined)?.header;
+  return !header?.glibcVersionRuntime;
+}
+const PLATFORM_NAMES: Record<string, string> = { darwin: "macOS", linux: "Linux", win32: "Windows" };
+export const platformLabel = () => `${PLATFORM_NAMES[process.platform] ?? process.platform}${musl() ? " (musl)" : ""} on ${process.arch === "x64" ? "Intel/AMD (x64)" : process.arch}`;
+
+/** An onnxruntime-node install only counts if it has the native build for this computer. */
+function hasBinding(resolved: string): boolean {
+  const at = resolved.lastIndexOf("onnxruntime-node");
+  if (at < 0) return true;
+  const root = resolved.slice(0, at + "onnxruntime-node".length);
+  return existsSync(join(root, "bin", "napi-v6", process.platform, process.arch, "onnxruntime_binding.node"));
+}
 
 /**
  * Where a runtime package resolves from: Docent's own dependencies first, then the downloaded runtime.
@@ -85,7 +115,11 @@ function resolveRuntime(name: keyof typeof RUNTIME): string | null {
   const downloaded = existsSync(join(runtimeDir(), "node_modules", name, "package.json"));
   for (const from of [import.meta.url, ...(downloaded ? [pathToFileURL(join(runtimeDir(), "package.json")).href] : [])]) {
     try {
-      return createRequire(from).resolve(name);
+      const at = createRequire(from).resolve(name);
+      // A checkout's own copy, or a runtime installed before this computer needed another version, may lack
+      // the native build: then it doesn't count, and the download installs the right one.
+      if (name === "onnxruntime-node" && !hasBinding(at)) continue;
+      return at;
     } catch {
       /* not there: try the next place */
     }
@@ -97,7 +131,7 @@ const runtimeReady = () => Object.keys(RUNTIME).every((n) => resolveRuntime(n as
 
 async function importRuntime<T>(name: keyof typeof RUNTIME): Promise<T> {
   const at = resolveRuntime(name);
-  if (!at) throw new VoiceError("The local voice isn't downloaded yet. Download it in Settings → Voice.");
+  if (!at) throw new VoiceError(kokoroSupported() ? "The local voice isn't downloaded yet. Download it in Settings → Narrator." : `The local voice can't run on ${platformLabel()}. Choose a cloud voice in Settings → Narrator.`);
   return (await import(pathToFileURL(at).href)) as T;
 }
 
@@ -110,7 +144,7 @@ async function installRuntime(signal: AbortSignal): Promise<void> {
 }
 
 export interface ModelStatus {
-  state: "absent" | "downloading" | "ready" | "error";
+  state: "absent" | "downloading" | "ready" | "error" | "unsupported";
   /** Bytes on disk so far, while downloading. */
   received: number;
   size: number;
@@ -129,6 +163,7 @@ export function kokoroReady(): boolean {
 }
 
 export function kokoroStatus(): ModelStatus {
+  if (!kokoroSupported()) return { state: "unsupported", received: 0, size: KOKORO_SIZE, error: `The local voice's runtime (onnxruntime) has no build for ${platformLabel()}. Use a cloud voice instead.` };
   if (download && !download.error) return { state: "downloading", received: download.received, size: download.size };
   if (kokoroReady()) return { state: "ready", received: KOKORO_SIZE, size: KOKORO_SIZE };
   if (!download) return { state: "absent", received: 0, size: KOKORO_SIZE };
@@ -137,7 +172,7 @@ export function kokoroStatus(): ModelStatus {
 
 /** Starts the download in the background (once); poll `kokoroStatus` for progress. */
 export function downloadKokoro(): ModelStatus {
-  if (kokoroReady() || (download && !download.error)) return kokoroStatus();
+  if (!kokoroSupported() || kokoroReady() || (download && !download.error)) return kokoroStatus();
   const job = { received: 0, size: KOKORO_SIZE, abort: new AbortController() } as NonNullable<typeof download>;
   download = job;
   void (async () => {

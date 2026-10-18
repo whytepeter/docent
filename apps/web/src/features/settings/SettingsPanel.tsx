@@ -43,7 +43,7 @@ function LocalModelCard({ about, model, onChange, onSettings }: { about: string;
   return (
     <div className="set-model">
       <p className="set-hint">{about}</p>
-      {model.state === "ready" ? (
+      {model.state === "unsupported" ? null : model.state === "ready" ? (
         <div className="set-key-row">
           <span className="set-saved"><Icon name="check" size={13} weight="bold" />Downloaded<code>{mb(model.size)} · works offline</code></span>
           <button className="tbtn" onClick={() => void act(api.removeModel().then(onSettings))}>Remove</button>
@@ -384,7 +384,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                         return (
                           <button key={p.id} role="radio" aria-checked={s.voice.provider === p.id} onClick={() => void api.setVoice({ provider: p.id }).then(update, fail)}>
                             <b>{p.name}</b>
-                            <span className={m.state === "ready" ? "ok" : ""}>{m.state === "ready" ? "Downloaded" : m.state === "downloading" ? "Downloading…" : `${mb(m.size)} download`}</span>
+                            <span className={m.state === "ready" ? "ok" : ""}>{m.state === "ready" ? "Downloaded" : m.state === "downloading" ? "Downloading…" : m.state === "unsupported" ? "Not on this computer" : `${mb(m.size)} download`}</span>
                           </button>
                         );
                       })}

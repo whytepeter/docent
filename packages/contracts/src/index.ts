@@ -249,7 +249,7 @@ export type VoiceProvider = CloudVoiceProvider | LocalVoiceProvider;
 
 /** A downloadable voice model: whether it's on disk, and how far a download has got (bytes). */
 export interface LocalModel {
-  state: "absent" | "downloading" | "ready" | "error";
+  state: "absent" | "downloading" | "ready" | "error" | "unsupported";
   received: number;
   size: number;
   error?: string;

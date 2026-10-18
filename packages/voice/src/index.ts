@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { KOKORO_DEFAULT_VOICE, KokoroAdapter, kokoroReady } from "./kokoro.ts";
 
-export { downloadKokoro, KOKORO_SIZE, KokoroAdapter, kokoroReady, kokoroStatus, removeKokoro, type ModelStatus } from "./kokoro.ts";
+export { downloadKokoro, KOKORO_SIZE, KokoroAdapter, kokoroReady, kokoroStatus, kokoroSupported, removeKokoro, type ModelStatus } from "./kokoro.ts";
 
 /**
  * Narration audio. One small interface so any provider plugs in; providers only ever receive
