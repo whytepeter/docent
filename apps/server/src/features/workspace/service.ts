@@ -135,7 +135,13 @@ panel.allowsMultipleSelection = false;
 panel.allowedFileTypes = $(["zip"]);
 panel.message = $("Choose a codebase: a project folder or a .zip");
 panel.prompt = $("Open");
-$.NSApplication.sharedApplication.activateIgnoringOtherApps(true);
+// osascript runs in the background, and macOS 14+ ignores activateIgnoringOtherApps, so the dialog opened
+// behind the browser. A floating level and orderFrontRegardless keep it on top whatever is focused.
+const app = $.NSApplication.sharedApplication;
+app.setActivationPolicy($.NSApplicationActivationPolicyAccessory);
+if (app.respondsToSelector("activate")) app.activate; else app.activateIgnoringOtherApps(true);
+panel.level = $.NSFloatingWindowLevel;
+panel.orderFrontRegardless;
 panel.runModal == $.NSModalResponseOK ? panel.URLs.objectAtIndex(0).path.js : "";
 `;
 

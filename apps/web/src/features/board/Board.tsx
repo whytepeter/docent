@@ -79,6 +79,14 @@ function Drawing({ state, onHome }: { state: BoardState; onHome: () => void }) {
   const now = useNow(!!job);
   const progress = useProgress(job, now);
   const failed = state.job?.finishedAt && state.job.error;
+  const stopped = failed === "Stopped";
+  const [asking, setAsking] = useState(false);
+  const [stopping, setStopping] = useState(false);
+  // Same as the tray's stop: nothing half-drawn is kept, so there's nothing left to look at here.
+  const stop = () => {
+    setStopping(true);
+    void api.stopBoard(state.flow.id).finally(onHome);
+  };
   return (
     <div className="bd-stage bd-static">
       <div className="bd-wait">
@@ -86,16 +94,29 @@ function Drawing({ state, onHome }: { state: BoardState; onHome: () => void }) {
         <h2>{state.flow.title}</h2>
         <div className="bd-wait-status">
           {failed ? null : <span className="spinner" aria-hidden="true" />}
-          <span>{failed ? `Couldn't draw it: ${state.job?.error}` : job?.stage ?? "Starting"}</span>
+          <span>{stopped ? "Stopped. Nothing half-drawn was kept." : failed ? `Couldn't draw it: ${state.job?.error}` : job?.stage ?? "Starting"}</span>
           {job && <span className="bd-wait-left">{timeLeft(job, now)}</span>}
         </div>
         {!failed && <div className="bd-wait-bar"><i style={{ transform: `scaleX(${job ? progress : 0.03})` }} /></div>}
-        {failed && <button className="bd-btn pri" onClick={() => void api.writeBoard(state.flow.id)}>Try again</button>}
+        {failed && <button className="bd-btn pri" onClick={() => void api.writeBoard(state.flow.id)}>{stopped ? "Draw it again" : "Try again"}</button>}
         <div className="bd-sticky-static">
           <p>{state.flow.summary}</p>
           <p className="bd-wait-files">It runs through {state.flow.files.map((f) => f.split("/").pop()).join(" → ")}</p>
         </div>
-        <button className="bd-link" onClick={onHome}>← Other flows</button>
+        {asking ? (
+          <div className="bd-wait-ask" role="alertdialog" aria-label="Stop drawing this board?">
+            <p><b>Stop drawing this board?</b> Nothing half-drawn is kept. Going back keeps it drawing in the background.</p>
+            <div>
+              <button className="bd-btn" onClick={() => setAsking(false)} disabled={stopping}>Keep drawing</button>
+              <button className="bd-btn danger" onClick={stop} disabled={stopping}>{stopping ? "Stopping…" : "Stop"}</button>
+            </div>
+          </div>
+        ) : (
+          <div className="bd-wait-foot">
+            <button className="bd-link" onClick={onHome}>← Other flows</button>
+            {job && <button className="bd-link bd-wait-stop" onClick={() => setAsking(true)}><Icon name="close" size={13} />Stop drawing</button>}
+          </div>
+        )}
       </div>
     </div>
   );
