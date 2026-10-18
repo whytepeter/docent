@@ -39,7 +39,7 @@ Run `docent doctor` to see which provider Docent will use and whether it's signe
 
 ### Voice (optional)
 
-Docent can read the tour aloud. In Settings → Voice, choose:
+Docent can read the tour aloud. In Settings → Narrator, choose:
 
 - **Kokoro**: runs on your computer. One download (about 110 MB of weights, plus the onnxruntime package) and nothing leaves your machine after that.
 - **Cartesia** or **Fish Audio**: cloud voices. Paste your API key in Settings.
@@ -59,6 +59,7 @@ Without a voice, the tour plays as text at reading pace.
 docent                     open the app for the current folder
 docent <repo>              open the app for a repo
 docent --port <n>          use another port than 4477
+docent --version           print the version
 docent doctor              check which AI provider Docent uses
 docent extract <repo>      read the repo and save its facts (no AI)
 docent fn <repo> <name>    show a function's callers, callees and tests
@@ -67,7 +68,10 @@ docent stats <repo>        summarize the saved facts
 
 ## Languages
 
-TypeScript and JavaScript (React, Node, and similar) are supported today; the call graph comes from the TypeScript compiler. Vue single-file components and other languages are on the [roadmap](docs/roadmap.md).
+- **TypeScript and JavaScript** (React, Next.js, Node, Express, NestJS and similar): full support. The call graph (who calls what, who imports what, which tests cover a function) comes from the TypeScript compiler.
+- **Vue, Svelte and Angular**: they work, but with less backing. Their `.ts` and `.js` files are in the call graph; Vue and Svelte components aren't yet, and Angular's dependency injection and templates aren't followed. Boards on these projects lean more on reading the files, and every claim is still checked against the cited lines.
+- **Python and Go**: files are read, but there's no call graph.
+- **Other languages** aren't read yet.
 
 ## Develop
 
