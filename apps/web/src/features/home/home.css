@@ -98,6 +98,7 @@
 .bd-home-card:not(.ready):not(.drawing) em { color: var(--mut); font-weight: 500; }
 .bd-home-ready { position: absolute; top: 14px; right: 14px; display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px; border-radius: 99px; font: 700 11.5px var(--ui); background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
 .bd-home-ready.drawing { background: var(--accsoft); color: var(--acc); animation: bd-pulse 1.6s ease-in-out infinite; }
+.bd-home-ready.stale { background: color-mix(in srgb, var(--warnc, var(--amber)) 18%, transparent); color: var(--warnc, var(--amber)); }
 .bd-home-card:has(.bd-home-ready) .bd-home-t b { padding-right: 64px; }
 .bd-home-t { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .bd-home-t b { font: 700 19px/1.2 var(--head); color: var(--bink); }
@@ -113,3 +114,4 @@
   .bd-home-bar .bd-home-repo { min-width: 0; max-width: calc(100vw - 32px - 40px - 40px - 40px - 24px); }
   .bd-home-repo { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
+.bd-home-card:has(.bd-home-ready.stale) .bd-home-t b { padding-right: 104px; }

@@ -53,6 +53,8 @@ export function Home({ repoName, switcher, onOpen, onBack, onSettings }: { repoN
   const progress = useProgress(job, now);
   const flows = state?.flows?.flows ?? [];
   const ready = new Set(state?.ready ?? []);
+  // Drawn boards whose cards' code changed since; opening one offers to update or redraw it.
+  const stale = new Set(state?.stale ?? []);
   const drawing = new Map((state?.drawing ?? []).filter((d) => !d.job.done.includes("board") && !d.job.finishedAt).map((d) => [d.id, d.job]));
   const failed = state?.job?.finishedAt && state.job.error && !state.flows;
 
@@ -101,7 +103,9 @@ export function Home({ repoName, switcher, onOpen, onBack, onSettings }: { repoN
                     {ready.has(f.id) ? progressLine(loadProgress(repoName, f.id)) : drawing.has(f.id) ? `drawing now · ${timeLeft(drawing.get(f.id)!, now) || "almost done"}` : "not drawn yet · about 2 min"}
                   </em>
                 </span>
-                {ready.has(f.id) && <span className="bd-home-ready"><Icon name="check" size={12} weight="bold" />Ready</span>}
+                {ready.has(f.id) && !drawing.has(f.id) && (stale.has(f.id)
+                  ? <span className="bd-home-ready stale" title="The code changed since this board was drawn; open it to update or redraw it">Code changed</span>
+                  : <span className="bd-home-ready"><Icon name="check" size={12} weight="bold" />Ready</span>)}
                 {drawing.has(f.id) && <span className="bd-home-ready drawing">Drawing</span>}
               </button>
             ))}

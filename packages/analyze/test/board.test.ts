@@ -22,8 +22,8 @@ type Spec = Parameters<typeof cleanBoard>[0];
 type SpecStep = Spec["steps"][number];
 type SpecBeat = SpecStep["beats"][number];
 const claim = (text: string) => ({ text, label: "confirmed" as const, evidence: [], commit: "", searched: "" });
-const beat = (b: Partial<SpecBeat> & Pick<SpecBeat, "kind">): SpecBeat => ({ text: "words", tone: "calm", lines: [], values: [], claim: null, analogy: false, ...b });
-const step = (s: Partial<SpecStep>): SpecStep => ({ part: "flow", card: "up", route: [], hops: [], beats: [beat({ kind: "say" })], state: [], ...s });
+const beat = (b: Partial<SpecBeat> & Pick<SpecBeat, "kind">): SpecBeat => ({ text: "words", tone: "calm", lines: [], values: [], focus: [], claim: null, analogy: false, ...b });
+const step = (s: Partial<SpecStep>): SpecStep => ({ part: "flow", card: "up", route: [], hops: [], beats: [beat({ kind: "say" })], state: [], touches: [], ...s });
 
 function spec(steps: SpecStep[]): Spec {
   return {
@@ -32,7 +32,7 @@ function spec(steps: SpecStep[]): Spec {
       { id: "page", title: "Page", file: "src/ui/Page.tsx", start: 1, end: 3, hot: [], role: "r", why: claim("w"), say: claim("s") },
       { id: "up", title: "Upload", file: "src/lib/upload.ts", start: 1, end: 4, hot: [2], role: "r", why: claim("w"), say: claim("s") },
     ],
-    edges: [{ from: "page", to: "up", label: "files" }],
+    edges: [{ from: "page", to: "up", label: "files", type: "" }],
     steps,
     example: null,
   };
@@ -42,7 +42,7 @@ describe("board tour", () => {
   it("keeps sound beats and turns unsound ones into plain talk", () => {
     const b = cleanBoard(spec([step({
       beats: [
-        beat({ kind: "point", lines: [2, 99], values: [{ line: 3, text: " n = 3 " }, { line: 3, text: "size = 3 MB" }, { line: 99, text: "off the card" }] }),
+        beat({ kind: "point", lines: [2, 99], values: [{ line: 3, text: " n = 3 ", other: "" }, { line: 3, text: "size = 3 MB", other: "" }, { line: 99, text: "off the card", other: "" }] }),
         beat({ kind: "point", lines: [99] }),
         beat({ kind: "ask", text: "Why?", tone: "calm" }),
         beat({ kind: "reveal", text: "", lines: [3], claim: claim("Because.") }),
@@ -53,10 +53,10 @@ describe("board tour", () => {
     const beats = b.steps[0]!.beats;
     expect(beats.map((x) => x.kind)).toEqual(["point", "say", "ask", "reveal", "say"]);
     expect(beats[0]!.lines).toEqual([2]);
-    expect(beats[0]!.values).toEqual([{ line: 3, text: "n = 3" }]);
+    expect(beats[0]!.values).toEqual([{ line: 3, text: "n = 3", other: "" }]);
     expect(beats[2]!.tone).toBe("curious");
     expect(beats[3]).toMatchObject({ text: "Because.", lines: [3] });
-    expect(b.version).toBe(4);
+    expect(b.version).toBe(5);
   });
 
   it("labels every point: the writer's claim, or a guess resting on the marked lines", () => {
@@ -99,6 +99,24 @@ describe("board tour", () => {
     expect(valueFits('error = "upload"', 'setError("upload");')).toBe(true);
   });
 
+  it("keeps a recap's whole route, a change's touched cards, exact underlines and the other way through", () => {
+    const b = cleanBoard(spec([
+      step({ part: "recap", card: "up", route: ["page>up", "up>nowhere"] }),
+      step({ part: "change", touches: ["page", "up", "ghost"], beats: [beat({
+        kind: "point", lines: [4],
+        values: [{ line: 4, text: "→ 6", other: "n = 0 → 0" }],
+        focus: [{ line: 4, text: "n * 2", cue: "doubles" }, { line: 4, text: "n * 3", cue: "" }],
+      })] }),
+      step({ part: "change", card: "" }),
+    ]), facts, root, "f", "m");
+    expect(b.steps[0]).toMatchObject({ part: "recap", card: "", route: ["page>up"] });
+    expect(b.steps[1]).toMatchObject({ part: "change", card: "up", touches: ["page"] });
+    const point = b.steps[1]!.beats[0]!;
+    expect(point.values).toEqual([{ line: 4, text: "→ 6", other: "n = 0 → 0" }]);
+    expect(point.focus).toEqual([{ line: 4, text: "n * 2", cue: "doubles" }]);
+    expect(b.steps[2]!.part).toBe("close");
+  });
+
   it("finds the tests that reach the flow's files", () => {
     expect(flowTests(facts, ["src/lib/upload.ts"])).toEqual(["src/lib/upload.test.ts"]);
     expect(flowTests(facts, ["src/ui/Page.tsx"])).toEqual([]);
@@ -135,7 +153,7 @@ describe("board tour", () => {
       defend: [{ q: "Why one retry?", card: "up", lines: [3], answer: claim("To bound it."), breaks: "Loops forever." }],
     } as unknown as Board;
     const b = upgradeBoard(old);
-    expect(b.version).toBe(4);
+    expect(b.version).toBe(5);
     expect(b.example).toBeNull();
     expect(b.steps.every((s) => s.state.length === 0 && s.beats.every((x) => x.analogy === false))).toBe(true);
     expect(b.steps.map((s) => s.part)).toEqual(["intro", "flow", "fail", "why", "close"]);

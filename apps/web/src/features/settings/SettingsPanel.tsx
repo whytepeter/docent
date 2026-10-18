@@ -343,8 +343,9 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
           <p className="set-foot"><Icon name="lock" size={13} /><span>Keys stay in Docent's own <code>.env</code> on this computer, never in a repo, and are never shown in full.</span></p>
           <a className="set-malt" href="https://buymeamalt.com/@whytepeter" target="_blank" rel="noopener noreferrer"><Icon name="malt" size={14} />Buy me a malt</a>
         </nav>
+        {/* On the panel, not in the scrolling body, so it stays put however far the settings scroll. */}
+        <button className="set-x" onClick={onClose} aria-label="Close" title="Close (Esc)"><Icon name="close" size={16} /></button>
         <div className="set-body">
-          <button className="set-x" onClick={onClose} aria-label="Close"><Icon name="close" size={16} /></button>
           {error && <p className="set-error" role="alert">{error}</p>}
           {!s && !error && tab !== "appearance" && <p className="set-hint">Loading…</p>}
           {s && tab === "narrator" && (

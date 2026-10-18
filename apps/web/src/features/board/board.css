@@ -188,7 +188,7 @@
 
 @media (max-width: 700px) {
   /* Leave room for the theme and settings buttons on the right. */
-  .bd-brand { max-width: calc(100vw - 28px - 116px); }
+  .bd-brand { max-width: calc(100vw - 28px - 168px); }
   .bd-bar { grid-template-areas: "body" "ctl"; }
   .bd-bar-ctl { justify-content: space-between; flex-wrap: wrap; gap: 4px; }
   .bd-bar-ctl .bd-steps { flex: 1; min-width: 0; padding: 0 4px; gap: 3px; }
@@ -305,8 +305,8 @@
 
 /* The example request's values, written beside the lines they pass through, like a note on the whiteboard. */
 .bd-ln { position: relative; }
-.bd-val { position: absolute; right: 10px; top: 50%; max-width: 60%; overflow: hidden; text-overflow: ellipsis; padding: 0 9px; border-radius: 7px; background: var(--st-y); color: var(--st-ink); font: 700 15px/22px var(--hand); white-space: nowrap; box-shadow: 1px 3px 8px rgba(0, 0, 0, .25); transform: translateY(-50%) rotate(-1.2deg); animation: bd-val-in .35s var(--ease-out) both; }
-@keyframes bd-val-in { from { opacity: 0; transform: translateY(-50%) rotate(-1.2deg) scale(.85); } }
+.bd-val { position: absolute; right: 10px; top: 50%; max-width: 60%; overflow: hidden; text-overflow: ellipsis; padding: 0 9px; border-radius: 7px; background: var(--st-y); color: var(--st-ink); font: 700 15px/22px var(--hand); white-space: nowrap; box-shadow: 1px 3px 8px rgba(0, 0, 0, .25); transform: translateX(var(--sx, 0px)) translateY(-50%) rotate(-1.2deg); animation: bd-val-in .35s var(--ease-out) both; }
+@keyframes bd-val-in { from { opacity: 0; transform: translateX(var(--sx, 0px)) translateY(-50%) rotate(-1.2deg) scale(.85); } }
 .bd-chat-cached { margin: 0; font-size: 12px; color: var(--mut); }
 
 /* Zoomed out (see FAR in engine.ts): each card is just its number and title, and the arrows keep their labels,
@@ -340,23 +340,74 @@
 .bd-pk-l { position: absolute; left: 34px; top: 50%; transform: translateY(-50%); padding: 2px 10px; border-radius: 99px; background: var(--panel); color: var(--bink); border: 1.5px solid var(--bline); font: 700 15px/20px var(--hand); white-space: nowrap; box-shadow: 0 3px 10px rgba(0, 0, 0, .12); }
 .bd-stage.far .bd-pk-l { display: none; }
 
-/* What the example holds so far: a small floating list under the title, new and changed things flash. */
-.bd-held { left: 14px; top: 70px; display: block; padding: 8px 12px 10px; max-width: min(280px, calc(100vw - 28px)); }
-.bd-held summary { cursor: pointer; font: 650 11px var(--ui); letter-spacing: .08em; text-transform: uppercase; color: var(--acc); list-style: none; }
-.bd-held summary::-webkit-details-marker { display: none; }
-.bd-held summary::after { content: " ▾"; color: var(--mut); }
-.bd-held:not([open]) summary::after { content: " ▸"; }
-.bd-held dl { margin: 6px 0 0; display: grid; gap: 3px; }
-.bd-held dl div { display: flex; gap: 8px; align-items: baseline; padding: 2px 6px; margin: 0 -6px; border-radius: 7px; }
-.bd-held dt { font: 500 12.5px var(--mono2); color: var(--mut); white-space: nowrap; }
-.bd-held dd { margin: 0; font: 600 13px var(--mono2); color: var(--bink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* What the example holds so far: one line in the story bar, under the caption, so it never covers the board.
+   It scrolls sideways when it's longer than the bar; new and changed things flash. */
+.bd-held { display: flex; align-items: baseline; gap: 6px; margin-top: 8px; overflow-x: auto; scrollbar-width: none; white-space: nowrap; }
+.bd-held::-webkit-scrollbar { display: none; }
+.bd-held small { flex: none; margin-right: 2px; font: 650 10.5px var(--ui); letter-spacing: .08em; text-transform: uppercase; color: var(--acc); }
+.bd-held span { flex: none; padding: 1px 8px; border-radius: 7px; background: var(--fill); font: 600 12.5px/20px var(--mono2); color: var(--bink); }
+.bd-held span i { font-style: normal; font-weight: 500; color: var(--mut); }
 .bd-held .new, .bd-held .changed { animation: bd-held-in 1.6s var(--ease-out) both; }
-.bd-held .new dt::before { content: "+ "; color: var(--ok); }
-.bd-held .changed dd::after { content: " ←"; color: var(--acc); }
-@keyframes bd-held-in { from { background: color-mix(in srgb, var(--st-y) 85%, transparent); } to { background: transparent; } }
+.bd-held .new i::before { content: "+ "; color: var(--ok); }
+@keyframes bd-held-in { from { background: color-mix(in srgb, var(--st-y) 70%, transparent); } }
+
+/* Story bar tooltips: a small bubble above the button with a pointer aimed at it; on hover (after a beat) and on
+   keyboard focus. The bubble is ::after and the pointer ::before, both drawn from data-tip. */
+.bd-bar-ctl [data-tip] { position: relative; }
+.bd-bar-ctl [data-tip]::after, .bd-bar-ctl [data-tip]::before {
+  position: absolute; left: 50%; z-index: 30; opacity: 0; pointer-events: none;
+  transition: opacity .12s, transform .14s var(--ease-out); transform: translate(-50%, 4px);
+}
+.bd-bar-ctl [data-tip]::after {
+  content: attr(data-tip); bottom: calc(100% + 11px); padding: 6px 10px; border-radius: 9px;
+  background: var(--bink); color: var(--panel); font: 600 12px/1.3 var(--ui); white-space: nowrap; box-shadow: 0 6px 18px rgba(0, 0, 0, .22);
+}
+.bd-bar-ctl [data-tip]::before {
+  content: ""; bottom: calc(100% + 5px); width: 0; height: 0;
+  border: 6px solid transparent; border-bottom: 0; border-top-color: var(--bink);
+}
+.bd-bar-ctl [data-tip]:hover::after, .bd-bar-ctl [data-tip]:hover::before,
+.bd-bar-ctl [data-tip]:focus-visible::after, .bd-bar-ctl [data-tip]:focus-visible::before { opacity: 1; transform: translate(-50%, 0); transition-delay: .25s; }
+/* Near the right edge the bubble lines up with the button's right side; the pointer stays on the button. */
+.bd-bar-ctl .bd-ask[data-tip]::after { left: auto; right: 0; transform: translateY(4px); }
+.bd-bar-ctl .bd-ask[data-tip]:hover::after, .bd-bar-ctl .bd-ask[data-tip]:focus-visible::after { transform: none; }
+@media (hover: none) { .bd-bar-ctl [data-tip]::after, .bd-bar-ctl [data-tip]::before { display: none; } }
+@media (prefers-reduced-motion: reduce) { .bd-bar-ctl [data-tip]::after, .bd-bar-ctl [data-tip]::before { transition: none; } }
 
 /* A quiet note under the caption: an analogy, or where the example comes from. */
 .bd-note { margin: 6px 0 0; font: 600 11.5px var(--ui); color: var(--mut); }
 .bd-ex { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
 .bd-ex .bd-said.bare { margin-top: 6px; }
 @media (prefers-reduced-motion: reduce) { .bd-held .new, .bd-held .changed { animation: none; } }
+
+/* Keeping a board true to the code: a redraw button beside the theme, and a note when cards' code changed. */
+.bd-stale { right: 14px; top: 70px; display: block; max-width: min(380px, calc(100vw - 28px)); padding: 12px 14px; }
+.bd-stale p { margin: 0 0 10px; font-size: 13.5px; line-height: 1.45; color: var(--ink-2); }
+.bd-stale b { color: var(--ink); }
+.bd-stale div { display: flex; justify-content: flex-end; gap: 6px; }
+.bd-stale .bd-btn { margin: 0; height: 34px; min-width: 0; padding: 0 12px; font-size: 13px; color: var(--bink); }
+.bd-stale .bd-btn.pri { background: var(--acc); color: var(--acc-ink); border-color: transparent; }
+.bd-updated { flex: none; font-size: 11.5px; font-weight: 600; color: var(--acc); padding: 2px 8px; border-radius: 99px; background: var(--accsoft); cursor: help; }
+@media (max-width: 700px) {
+  .bd-stale { left: 14px; right: 14px; top: 112px; max-width: none; }
+}
+
+/* An exact piece of code, underlined as it's said (CSS Custom Highlight API). */
+::highlight(bd-focus) { background-color: color-mix(in srgb, var(--acc) 45%, transparent); text-decoration: underline 2px; text-decoration-color: var(--acc); }
+
+/* At a decision, the other way through: fainter, under the example's value. */
+.bd-val-o { position: absolute; right: 10px; top: calc(50% + 15px); z-index: 1; max-width: 60%; overflow: hidden; text-overflow: ellipsis; padding: 0 8px; border-radius: 7px; border: 1.5px dashed color-mix(in srgb, var(--st-y) 70%, transparent); color: color-mix(in srgb, var(--st-y) 85%, var(--code-mut)); font: 600 13px/18px var(--hand); white-space: nowrap; transform: translateX(var(--sx, 0px)) rotate(-1.2deg); animation: bd-val-o-in .35s .25s var(--ease-out) both; }
+@keyframes bd-val-o-in { from { opacity: 0; } }
+
+/* A change: the other cards it touches are outlined while it's told. */
+.bd-card.touched { border-color: var(--warnc); box-shadow: 0 0 0 4px color-mix(in srgb, var(--warnc) 30%, transparent), var(--bshadow); }
+
+/* The pause-on-questions switch, when on. */
+.bd-fl .bd-bar-ctl button.on-soft { background: var(--accsoft); color: var(--acc); }
+.bd-travels .bd-chip { margin-left: 2px; font: 600 11.5px var(--mono2); padding: 1px 7px; border-radius: 6px; border: 1px solid var(--bline); background: var(--fill); color: var(--bink); cursor: pointer; }
+
+
+/* Shown only when the code changed since the board was drawn: a labelled pill beside the theme button. */
+.bd-gear.bd-redraw { right: 118px; width: auto; padding: 0 14px !important; gap: 6px; color: var(--warnc); font: 650 13px var(--ui); }
+.bd-gear.bd-redraw.on { background: color-mix(in srgb, var(--warnc) 14%, var(--panel)); }
+@media (max-width: 700px) { .bd-gear.bd-redraw { width: 44px; padding: 0 !important; } .bd-gear.bd-redraw span { display: none; } }

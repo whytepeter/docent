@@ -14,6 +14,8 @@ export function boardRoutes(svc: BoardService, root: () => string): Hono {
       return b ? c.json<BoardState>(b) : c.json({ error: "No such flow" }, 404);
     })
     .post("/boards/:id/write", (c) => c.json(svc.writeBoard(c.req.param("id"))))
+    // Only the cards whose code changed are rewritten; the rest of the tour stays word for word.
+    .post("/boards/:id/update", (c) => c.json(svc.writeBoard(c.req.param("id"), "update")))
     .post("/boards/:id/stop", (c) => c.json(svc.stopBoard(c.req.param("id"))))
     // Only a tour beat's own words are ever sent to the voice provider, looked up here by step and beat.
     .post("/boards/:id/voice", async (c) => {

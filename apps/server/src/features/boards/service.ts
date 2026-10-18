@@ -1,6 +1,6 @@
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
-import { checkBoard, checkOverview, loadBoard, loadFlows, loadOverview, proposeFlows, saveBoard, saveFlows, saveOverview, writeBoard, writeOverview, type Board, type ProjectOverview } from "@docent/analyze";
+import { checkBoard, checkOverview, freshness, loadBoard, loadFlows, loadOverview, proposeFlows, refreshBoard, saveBoard, saveFlows, saveOverview, updateBoard, writeBoard, writeOverview, type Board, type ProjectOverview } from "@docent/analyze";
 import type { BoardState, FlowsState, Job } from "@docent/contracts";
 import { repoCacheDir } from "@docent/extract";
 import { pickProvider } from "@docent/llm";
@@ -9,6 +9,7 @@ import type { RepoService } from "../repo/index.ts";
 /** Typical times, for honest estimates (seconds). */
 const FLOWS_S = 60;
 const BOARD_S = 140;
+const UPDATE_S = 60;
 const CHECK_S = 20;
 const OVERVIEW_S = 80;
 const OVERVIEW_CHECK_S = 50;
@@ -42,7 +43,13 @@ export class BoardService {
     const drawing = [...this.jobs.entries()]
       .filter(([, j]) => !j.finishedAt || Date.parse(j.finishedAt) > recent)
       .map(([id, job]) => ({ id, title: flows?.flows.find((f) => f.id === id)?.title ?? id, job }));
-    return { flows, job: this.flowsJob, ready, overview: loadOverview(this.root), overviewJob: this.overviewJob, drawing };
+    // Reading a few excerpts per board is quick; a board whose code only moved isn't stale (it's fixed when opened).
+    const stale = ready.filter((id) => {
+      const b = loadBoard(this.root, id);
+      const s = b ? freshness(b, this.repo.facts, this.root).state : "fresh";
+      return s === "changed" || s === "redraw";
+    });
+    return { flows, job: this.flowsJob, ready, overview: loadOverview(this.root), overviewJob: this.overviewJob, drawing, stale };
   }
 
   /** Proposes the flows worth a whiteboard (about a minute). */
@@ -98,7 +105,15 @@ export class BoardService {
   board(id: string): BoardState | null {
     const flow = loadFlows(this.root)?.flows.find((f) => f.id === id);
     if (!flow) return null;
-    return { flow, board: loadBoard(this.root, id), job: this.jobs.get(id) ?? null };
+    let board = loadBoard(this.root, id);
+    let fresh = board ? freshness(board, this.repo.facts, this.root) : null;
+    // Code that only moved is fixed here, with no AI: same words, lines shifted to where the code is now.
+    if (board && fresh?.state === "moved") {
+      board = refreshBoard(board, fresh, this.repo.facts, this.root);
+      saveBoard(this.root, board);
+      fresh = freshness(board, this.repo.facts, this.root);
+    }
+    return { flow, board, job: this.jobs.get(id) ?? null, fresh };
   }
 
   /** Stops a board that's being drawn. Nothing half-drawn is saved; a board already drawn stays. */
@@ -107,15 +122,26 @@ export class BoardService {
     return this.jobs.get(id) ?? null;
   }
 
-  /** Writes a flow's board (a few minutes), shows it, then checks its claims behind it. */
-  writeBoard(id: string): Job {
+  /**
+   * Writes a flow's board (a few minutes), shows it, then checks its claims behind it. "update" rewrites only the
+   * cards whose code changed (and what depends on them), keeping the rest word for word; it falls back to drawing
+   * the board again when there's nothing to update from. The board already on disk stays until the new one is saved.
+   */
+  writeBoard(id: string, mode: "draw" | "update" = "draw"): Job {
     const running = this.jobs.get(id);
     if (running && !running.finishedAt) return running;
     const flow = loadFlows(this.root)?.flows.find((f) => f.id === id);
     if (!flow) throw new Error("No such flow");
+    // The facts (call graph, tests, symbols) must describe the code as it is now.
+    if (this.repo.isStale()) this.repo.reextract();
+    const old = mode === "update" ? loadBoard(this.root, id) : null;
+    const changed = old ? freshness(old, this.repo.facts, this.root).cards.filter((c) => c.state === "changed").map((c) => c.id) : [];
+    const updating = !!old && changed.length > 0;
     const job: Job = {
       kind: "board", featureId: id, startedAt: new Date().toISOString(), total: 2, done: [], failed: [],
-      message: `Drawing ${flow.title}`, stage: "Reading the code and drawing the board", active: [flow.title], estimateSeconds: BOARD_S + CHECK_S,
+      message: updating ? `Updating ${flow.title}` : `Drawing ${flow.title}`,
+      stage: updating ? `Rewriting ${changed.length === 1 ? "the card" : `${changed.length} cards`} whose code changed` : "Reading the code and drawing the board",
+      active: [flow.title], estimateSeconds: (updating ? UPDATE_S : BOARD_S) + CHECK_S,
     };
     this.jobs.set(id, job);
     const stop = new AbortController();
@@ -124,7 +150,9 @@ export class BoardService {
     void (async () => {
       let board: Board | null = null;
       try {
-        board = await writeBoard(pickProvider(), this.repo.facts, this.root, flow, { signal });
+        board = updating
+          ? await updateBoard(pickProvider(), this.repo.facts, this.root, flow, old!, changed, { signal })
+          : await writeBoard(pickProvider(), this.repo.facts, this.root, flow, { signal });
         saveBoard(this.root, board);
         job.done.push("board");
         const elapsed = (Date.now() - Date.parse(job.startedAt)) / 1000;

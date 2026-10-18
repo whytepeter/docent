@@ -34,3 +34,13 @@ voiceOnStore.subscribe(() => {
     /* storage off */
   }
 });
+
+/** "Pause on questions": after Docent asks, the tour waits until you play on. Off unless chosen; never automatic. */
+export const thinkStore = createStore<boolean>(saved("docent:think", (v) => v === "on", false));
+thinkStore.subscribe(() => {
+  try {
+    localStorage.setItem("docent:think", thinkStore.get() ? "on" : "off");
+  } catch {
+    /* storage off */
+  }
+});

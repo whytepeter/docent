@@ -39,6 +39,8 @@ export interface EngineOptions {
   persist: (s: Saved) => void;
   /** The step to open on: where you stopped last time. */
   startAt?: number;
+  /** "Pause on questions": after Docent asks, the tour waits until the learner plays on. */
+  thinkPause?: () => boolean;
 }
 
 const W = 520;
@@ -62,6 +64,14 @@ export const LABEL: Record<string, string> = {
 };
 
 const rm = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+/** How many words have been said once the cue word is out; 0 when it isn't in the text (underline at once). */
+function cueAt(text: string, cue: string): number {
+  const norm = (w: string) => w.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const c = norm(cue.trim().split(/\s+/)[0] ?? "");
+  if (!c) return 0;
+  const i = text.split(/\s+/).filter(Boolean).findIndex((w) => norm(w) === c || norm(w).startsWith(c));
+  return i < 0 ? 0 : i + 1;
+}
 const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const ease = (p: number) => (p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2);
 const ease2 = (p: number) => (p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2);
@@ -622,6 +632,18 @@ export class BoardEngine {
     this.world.appendChild(p);
     return p;
   }
+  /** Sends a packet along a route, link by link; it says what it carries on each one, so the request reads as data on the move. */
+  private async runRoute(route: string[], ms: number, tok: number) {
+    if (!route.length) return;
+    const pk = this.packet();
+    this.placePacket(pk, route[0]!.split(">")[0]!, "r");
+    for (const k of route) {
+      this.labelPacket(pk, this.board.edges.find((e) => `${e.from}>${e.to}` === k)?.label ?? "");
+      await this.travel(pk, k, false, ms, tok);
+      if (tok !== this.tok) break;
+    }
+    pk.remove();
+  }
   /** A tag riding beside the packet: what travels along the link it's on. */
   private labelPacket(p: HTMLElement, text: string) {
     let tag = p.querySelector<HTMLElement>(".bd-pk-l");
@@ -710,7 +732,8 @@ export class BoardEngine {
    * The caption, read at the voice's pace when there is a voice: each word appears as it's spoken.
    * Without one it types quickly. Pausing freezes both. True when it was spoken.
    */
-  private async narrate(title: string, text: string, at: { at: number; beat: number } | null, tok: number): Promise<boolean> {
+  /** Says one beat: words appear on the voice's clock (or type in without one); onWords hears how many are out. */
+  private async narrate(title: string, text: string, at: { at: number; beat: number } | null, tok: number, onWords: (n: number) => void = () => {}): Promise<boolean> {
     const { title: tEl, text: pEl } = this.o.caption;
     tEl.textContent = title;
     const clip = at === null ? null : await Promise.race([this.clip(at.at, at.beat), new Promise<null>((r) => setTimeout(() => r(null), 4000))]);
@@ -719,7 +742,7 @@ export class BoardEngine {
       const n = this.nextBeat(at.at, at.beat);
       if (n) void this.clip(...n);
     }
-    if (!clip) return (await this.typeText(pEl, text, tok, 14 / this.o.rate()), false);
+    if (!clip) return (onWords(Infinity), await this.typeText(pEl, text, tok, 14 / this.o.rate()), false);
     const words = text.split(/(\s+)/);
     const total = words.filter((w) => w.trim()).length;
     const audio = new Audio(clip.url);
@@ -729,6 +752,7 @@ export class BoardEngine {
     const draw = (shown: number) => {
       let n = 0;
       pEl.innerHTML = words.map((w) => (w.trim() ? `<span class="${n++ < shown ? "said" : "unsaid"}">${esc(w)}</span>` : w)).join("");
+      onWords(shown);
     };
     draw(0);
     try {
@@ -866,7 +890,7 @@ export class BoardEngine {
     const st = this.board.steps[i];
     if (!st) return;
     this.clearMarks();
-    this.world.querySelectorAll(".bd-val").forEach((v) => v.remove());
+    this.world.querySelectorAll(".bd-val, .bd-val-o").forEach((v) => v.remove());
     for (const c of this.cards.values()) c.stat.classList.remove("show");
     for (const id of this.cards.keys()) if (id !== st.card) this.closeCard(id);
     const card = st.card ? this.cards.get(st.card) : null;
@@ -885,6 +909,8 @@ export class BoardEngine {
       void (st.part === "intro" ? this.glide(tok) : this.fit());
       await this.drawUpTo(i, tok);
       if (st.part === "close") for (const e of this.edges.values()) e.path.classList.add("on");
+      // The recap sends the request along the whole trip again, saying what it carries on each link, while it's told.
+      if (st.part === "recap" && st.route.length) void this.runRoute(st.route, 650, tok);
     } else {
       // Go to where the card is (or will be), then draw what the tour reaches here, then send the request in.
       // A failure is told on the whole path it takes; anything else on its card.
@@ -893,21 +919,9 @@ export class BoardEngine {
       await this.drawUpTo(i, tok);
       if (tok !== this.tok) return;
       card.root.classList.add("act");
-      let seq = Promise.resolve();
-      if (st.route.length) {
-        const pk = this.packet();
-        this.placePacket(pk, st.route[0]!.split(">")[0]!, "r");
-        seq = (async () => {
-          for (const k of st.route) {
-            // The packet says what it carries along each link, so the request reads as data on the move.
-            this.labelPacket(pk, this.board.edges.find((e) => `${e.from}>${e.to}` === k)?.label ?? "");
-            await this.travel(pk, k, false, 800, tok);
-            if (tok !== this.tok) break;
-          }
-          pk.remove();
-        })();
-      }
-      await seq;
+      // A change: the cards it also touches are outlined while it's told.
+      for (const id of st.touches ?? []) this.cards.get(id)?.root.classList.add("touched");
+      await this.runRoute(st.route, 800, tok);
       if (tok !== this.tok) return;
       if (!st.hops.length) opened = this.openCard(card.data.id, tok, points ? [] : card.data.hot, !points);
     }
@@ -932,8 +946,21 @@ export class BoardEngine {
       }
       // Marked as current only as it's said, so its label and lines never show ahead of the words.
       this.set({ beat: { i: b, kind: beat.kind } });
-      const spoken = await this.narrate(title, beat.text, at, tok);
+      // The exact piece of code is underlined when its cue word is spoken (at once without a voice).
+      const focus = card ? (beat.focus ?? []).map((f) => ({ ...f, at: cueAt(beat.text, f.cue) })) : [];
+      const shown = new Set<number>();
+      const reach = (n: number) => focus.forEach((f, k) => {
+        if (n >= f.at && !shown.has(k)) (shown.add(k), this.underline(card!, f.line, f.text));
+      });
+      const spoken = await this.narrate(title, beat.text, at, tok, reach);
+      reach(Infinity);
       // After a question, a moment to think before Docent answers it; without a voice, time to read.
+      // With "pause on questions" on, the tour waits there until the learner plays on.
+      if (beat.kind === "ask" && this.s.playing && this.o.thinkPause?.()) {
+        this.paused = true;
+        this.audio?.pause();
+        this.emit();
+      }
       const words = beat.text.split(/\s+/).length;
       await this.sleep((beat.kind === "ask" ? 1400 : spoken ? 350 : 600 + words * 240) / this.o.rate(), tok);
     }
@@ -1017,6 +1044,8 @@ export class BoardEngine {
     if (st.part === "close") return "Now you can say it";
     if (st.part === "fail") return `When it goes wrong · ${card?.data.title ?? ""}`;
     if (st.part === "why") return `Why it's built this way · ${card?.data.title ?? ""}`;
+    if (st.part === "recap") return "The whole trip";
+    if (st.part === "change") return `If you change it · ${card?.data.title ?? ""}`;
     return `Step ${flow.indexOf(st) + 1} of ${flow.length} · ${card?.data.title ?? ""}`;
   }
 
@@ -1055,7 +1084,7 @@ export class BoardEngine {
     for (const n of lines) c.code.querySelector(`.bd-ln[data-i="${n - c.data.start}"]`)?.classList.add("pt");
   }
   /** The example's values, written beside the lines they pass through; they stay for the rest of the step. */
-  private writeValues(c: CardEl, values: { line: number; text: string }[]) {
+  private writeValues(c: CardEl, values: { line: number; text: string; other?: string }[]) {
     for (const v of values) {
       const row = c.code.querySelector<HTMLElement>(`.bd-ln[data-i="${v.line - c.data.start}"]`);
       if (!row || row.querySelector(".bd-val")) continue;
@@ -1064,7 +1093,70 @@ export class BoardEngine {
       tag.textContent = v.text;
       tag.title = "What the example holds here: worked out from the example and the code, not from running it";
       row.appendChild(tag);
+      // At a decision, the other way through, fainter and under it.
+      if (v.other) {
+        const alt = document.createElement("span");
+        alt.className = "bd-val-o";
+        alt.textContent = `else ${v.other}`;
+        alt.title = "The other way through this line: a reasoned guess from the code (inferred), not something the example does";
+        row.appendChild(alt);
+      }
     }
+  }
+  /**
+   * Underlines one exact piece of a line, as a finger on the word: a CSS highlight over the text as typed,
+   * so the code's own markup is left alone. Lines stay marked where the browser can't do this.
+   */
+  private underline(c: CardEl, line: number, text: string) {
+    const body = c.code.querySelector<HTMLElement>(`.bd-ln[data-i="${line - c.data.start}"] > span`);
+    const hl = (globalThis as { CSS?: { highlights?: Map<string, unknown> } }).CSS?.highlights;
+    if (!body || !hl || typeof Highlight === "undefined") return;
+    const nodes: Text[] = [];
+    const walk = document.createTreeWalker(body, NodeFilter.SHOW_TEXT);
+    for (let n = walk.nextNode(); n; n = walk.nextNode()) nodes.push(n as Text);
+    const all = nodes.map((n) => n.data).join("");
+    const from = all.indexOf(text);
+    if (from < 0) return;
+    // Text offsets in the whole line, mapped back onto the nodes they fall in.
+    const place = (off: number): [Text, number] => {
+      for (const n of nodes) {
+        if (off <= n.data.length) return [n, off];
+        off -= n.data.length;
+      }
+      const last = nodes[nodes.length - 1]!;
+      return [last, last.data.length];
+    };
+    const r = document.createRange();
+    r.setStart(...place(from));
+    r.setEnd(...place(from + text.length));
+    const cur = hl.get("bd-focus") as Highlight | undefined;
+    if (cur) cur.add(r);
+    else hl.set("bd-focus", new Highlight(r));
+    this.bringIntoView(c, r);
+  }
+  /**
+   * Long lines run past the card: scroll the code sideways so the underlined piece is in view and clear of the
+   * example's value tags, which stay pinned to the visible edge (see --sx in board.css).
+   */
+  private bringIntoView(c: CardEl, r: Range) {
+    const sc = c.code;
+    if (!sc.dataset.pinned) {
+      sc.dataset.pinned = "1";
+      sc.addEventListener("scroll", () => sc.style.setProperty("--sx", `${sc.scrollLeft}px`), { passive: true });
+    }
+    const k = this.cam.k || 1;
+    const box = sc.getBoundingClientRect();
+    const at = r.getBoundingClientRect();
+    const tags = [...(r.startContainer.parentElement?.closest(".bd-ln")?.querySelectorAll<HTMLElement>(".bd-val, .bd-val-o") ?? [])];
+    const tagLeft = Math.min(box.right, ...tags.map((t) => t.getBoundingClientRect().left));
+    // Screen pixels to the code's own pixels (the board is scaled by the camera).
+    const right = (at.right - tagLeft + 16) / k;
+    const left = (box.left + 56 * k - at.left) / k;
+    if (right > 0) sc.scrollTo({ left: sc.scrollLeft + Math.min(right, Math.max(0, -left)), behavior: rm() ? "auto" : "smooth" });
+    else if (left > 0) sc.scrollTo({ left: Math.max(0, sc.scrollLeft - left), behavior: rm() ? "auto" : "smooth" });
+  }
+  private clearUnderlines() {
+    (globalThis as { CSS?: { highlights?: Map<string, unknown> } }).CSS?.highlights?.delete("bd-focus");
   }
   private settleMarks(c: CardEl) {
     c.code.querySelectorAll(".bd-ln.pt").forEach((r) => r.classList.replace("pt", "hot"));
@@ -1120,7 +1212,12 @@ export class BoardEngine {
     this.clearMarks();
   }
   private clearMarks() {
-    for (const c of this.cards.values()) c.root.classList.remove("good", "bad", "act");
+    for (const c of this.cards.values()) {
+      c.root.classList.remove("good", "bad", "act", "touched");
+      // Code scrolled sideways to show an underline goes back to the start of its lines.
+      if (c.code.scrollLeft) c.code.scrollLeft = 0;
+    }
+    this.clearUnderlines();
   }
 
   // ---------------------------------------------------------------- pointer

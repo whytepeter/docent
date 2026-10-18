@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Board, BoardState } from "@docent/contracts";
 import { api } from "../../shared/api/client.ts";
 import { useQuery } from "../../shared/api/useQuery.ts";
-import { nextRate, rateStore, voiceOnStore } from "../../shared/state/playback.ts";
+import { nextRate, rateStore, thinkStore, voiceOnStore } from "../../shared/state/playback.ts";
 import { useStore } from "../../shared/state/store.ts";
 import { editorThemeStore, openCode, toHtml } from "../code/index.ts";
 import { timeLeft, useNow, useProgress } from "../jobs/index.ts";
@@ -16,33 +16,80 @@ import "./board.css";
 
 /** What each part of the tour is, for the step dots. */
 const PART: Record<Board["steps"][number]["part"], string> = {
-  intro: "The big picture", flow: "Following the request", fail: "When it goes wrong", why: "Why it's built this way", close: "Now you can say it",
+  intro: "The big picture", flow: "Following the request", recap: "The whole trip", fail: "When it goes wrong", why: "Why it's built this way",
+  change: "If you change it", close: "Now you can say it",
 };
 
 /**
- * What the example holds so far, beside the board: it builds up from the intro through the flow (new and changed
- * things flash), stays as it ended for the close, and steps aside while a failure or a reviewer's question plays.
- * Open where the board has room beside it (the camera then frames cards to its right); folded to a pill
- * elsewhere until opened.
+ * What the example holds so far, as one line in the story bar (never over the board): it builds up from the intro
+ * through the flow (new and changed things flash), the recap and close keep the last of it, and it steps aside
+ * while a failure, a reviewer's question or a change is told.
  */
 function Holding({ board, at }: { board: Board; at: number }) {
   const st = board.steps[at];
   const last = [...board.steps].reverse().find((s) => s.state.length);
-  const held = st?.part === "intro" || st?.part === "flow" ? st.state : st?.part === "close" ? last?.state.map((h) => ({ ...h, change: "same" as const })) ?? [] : [];
-  const [open, setOpen] = useState(() => matchMedia("(min-width: 1100px)").matches);
+  const held = st?.part === "intro" || st?.part === "flow" ? st.state : st?.part === "close" || st?.part === "recap" ? last?.state.map((h) => ({ ...h, change: "same" as const })) ?? [] : [];
   if (!held.length) return null;
   return (
-    <details className="bd-fl bd-held" open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
-      <summary title="What the example request holds once this step has run: worked out from the example and the code, not from running it">The example so far</summary>
-      <dl key={at}>
-        {held.map((h) => (
-          <div key={h.key} className={h.change}>
-            <dt>{h.key}</dt>
-            <dd>{h.value}</dd>
+    <div className="bd-held" key={at} title="What the example request holds once this step has run: worked out from the example and the code, not from running it">
+      <small>The example so far</small>
+      {held.map((h) => (
+        <span key={h.key} className={h.change}><i>{h.key}</i> {h.value}</span>
+      ))}
+    </div>
+  );
+}
+
+/** The declared shape of what reaches this step's card, cut from the code itself: one click opens it. */
+function Travels({ board, route }: { board: Board; route: string[] }) {
+  const last = route[route.length - 1];
+  const shape = board.edges.find((e) => `${e.from}>${e.to}` === last)?.shape;
+  if (!shape) return null;
+  return (
+    <p className="bd-note bd-travels">
+      What travels here is a <button className="bd-chip" title={`Open its declaration: ${shape.file}:${shape.start}–${shape.end}`} onClick={() => openCode(shape.file, shape.start, shape.end)}>{shape.name}</button>
+    </p>
+  );
+}
+
+/**
+ * Keeping a board true to the code. Code that only moved was already fixed by the server, so nothing shows then.
+ * Only when cards' code really changed does a note say which, offering to update just those cards (or to draw
+ * the board again when too much changed); "Later" folds it to a button in the corner. The board on screen stays
+ * until the new one lands.
+ */
+function Rewrite({ job, fresh, onRewrite }: { job: BoardState["job"]; fresh: BoardState["fresh"]; onRewrite: (mode: "draw" | "update") => Promise<void> }) {
+  const [open, setOpen] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const running = !!job && !job.finishedAt;
+  const stale = fresh?.state === "changed" || fresh?.state === "redraw";
+  if (!stale || running) return null;
+  const changed = fresh.cards.filter((c) => c.state === "changed" || c.state === "gone");
+  const go = (mode: "draw" | "update") => {
+    setBusy(true);
+    void onRewrite(mode).finally(() => setBusy(false));
+  };
+  const names = changed.map((c) => c.title).join(", ");
+  const n = changed.length;
+  return (
+    <>
+      <button className={`bd-fl bd-gear bd-redraw${open ? " on" : ""}`} onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-label="The code changed since this board was drawn: update or redraw it" title="The code changed since this board was drawn: update or redraw it">
+        <Icon name="warn" size={15} /><span>Code changed</span>
+      </button>
+      {open && (
+        <div className="bd-fl bd-stale" role="status">
+          <p>
+            <b>The code changed since this board was drawn.</b>{" "}
+            {fresh.state === "redraw" ? `Too much moved on to update it card by card (${names}), so it's best drawn again.` : `${n === 1 ? "This card" : "These cards"} no longer match: ${names}. Updating rewrites only ${n === 1 ? "it" : "them"} and what depends on ${n === 1 ? "it" : "them"}; the rest of the tour stays word for word.`}
+          </p>
+          <div>
+            <button className="bd-btn" onClick={() => setOpen(false)} disabled={busy}>Later</button>
+            {fresh.state === "changed" && <button className="bd-btn pri" onClick={() => go("update")} disabled={busy}>Update {n === 1 ? "1 card" : `${n} cards`}</button>}
+            <button className={`bd-btn${fresh.state === "changed" ? "" : " pri"}`} onClick={() => go("draw")} disabled={busy}>Redraw</button>
           </div>
-        ))}
-      </dl>
-    </details>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -68,6 +115,12 @@ export function BoardScreen({ id, repoName, onHome, onSettings }: { id: string; 
   const [state, setState] = useState<BoardState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const started = useRef(false);
+  // Bumped after a redraw or update is started, so the board is watched again until the new one lands.
+  const [kick, setKick] = useState(0);
+  const rewrite = async (mode: "draw" | "update") => {
+    await (mode === "update" ? api.updateBoard(id) : api.writeBoard(id));
+    setKick((k) => k + 1);
+  };
   useEffect(() => {
     let live = true;
     let t: ReturnType<typeof setTimeout> | undefined;
@@ -92,12 +145,12 @@ export function BoardScreen({ id, repoName, onHome, onSettings }: { id: string; 
       live = false;
       clearTimeout(t);
     };
-  }, [id]);
+  }, [id, kick]);
 
   if (error) return <div className="bd-msg">{error} <button className="bd-link" onClick={onHome}>Back to the flows</button></div>;
   if (!state) return <div className="bd-msg"><span className="spinner" /> Opening the board…</div>;
   if (!state.board) return <Drawing state={state} onHome={onHome} />;
-  return <BoardView id={id} board={state.board} job={state.job} repoName={repoName} onHome={onHome} onSettings={onSettings} />;
+  return <BoardView id={id} board={state.board} job={state.job} fresh={state.fresh} onRewrite={rewrite} repoName={repoName} onHome={onHome} onSettings={onSettings} />;
 }
 
 /** While a board is drawn: what's happening, how long is left, and the flow's outline to read meanwhile. */
@@ -150,7 +203,10 @@ function Drawing({ state, onHome }: { state: BoardState; onHome: () => void }) {
 }
 
 
-function BoardView({ id, board, job, repoName, onHome, onSettings }: { id: string; board: Board; job: BoardState["job"]; repoName: string; onHome: () => void; onSettings: () => void }) {
+function BoardView({ id, board, job, fresh, onRewrite, repoName, onHome, onSettings }: {
+  id: string; board: Board; job: BoardState["job"]; fresh: BoardState["fresh"]; onRewrite: (mode: "draw" | "update") => Promise<void>;
+  repoName: string; onHome: () => void; onSettings: () => void;
+}) {
   const stage = useRef<HTMLDivElement>(null);
   const capT = useRef<HTMLElement>(null);
   const capP = useRef<HTMLParagraphElement>(null);
@@ -164,8 +220,9 @@ function BoardView({ id, board, job, repoName, onHome, onSettings }: { id: strin
   const [voiceMenu, setVoiceMenu] = useState(false);
   // A "Why?" from the tour: the question it asked, and whether the tour was playing when it was asked.
   const [why, setWhy] = useState<{ q: string; was: boolean } | null>(null);
-  const live = useRef({ rate, speak, chat });
-  live.current = { rate, speak, chat };
+  const think = useStore(thinkStore);
+  const live = useRef({ rate, speak, chat, think });
+  live.current = { rate, speak, chat, think };
 
   useEffect(() => {
     if (!stage.current || !capT.current || !capP.current) return;
@@ -181,12 +238,12 @@ function BoardView({ id, board, job, repoName, onHome, onSettings }: { id: strin
       insets: () => {
         const nar = narrow();
         const bar = document.querySelector<HTMLElement>(".bd-bar")?.offsetHeight ?? 120;
-        // The open chat takes the right side, and the example's list (open only where there's room) the left; frame the board in what's left.
-        const held = document.querySelector<HTMLElement>(".bd-held[open]")?.getBoundingClientRect().right ?? 0;
-        return { t: 70, b: bar + 32, l: nar ? 16 : Math.max(40, held + 16), r: nar ? 16 : live.current.chat ? 440 : 40 };
+        // The open chat takes the right side; frame the board in what's left.
+        return { t: 70, b: bar + 32, l: nar ? 16 : 40, r: nar ? 16 : live.current.chat ? 440 : 40 };
       },
       saved: loadSaved(id, board),
       // Pick up where you stopped, unless you'd finished (then it starts over) or the board was drawn again.
+      thinkPause: () => live.current.think,
       startAt: (() => {
         const p = loadProgress(repoName, id);
         return p && p.generatedAt === board.generatedAt && !p.done ? p.step : 0;
@@ -283,8 +340,10 @@ function BoardView({ id, board, job, repoName, onHome, onSettings }: { id: strin
       <div className="bd-fl bd-brand">
         <button className="bd-back" onClick={onHome} title="All flows" aria-label="All flows"><Icon name="back" size={18} /></button>
         <span className="bd-brand-t"><b>{board.title}</b><small>{repoName}</small></span>
+        {board.updated && <span className="bd-updated" title={`Updated ${new Date(board.updated.at).toLocaleString()}: rewrote ${board.updated.cards.join(", ")} (steps ${board.updated.steps.join(", ") || "none"}); the rest is as first drawn.${board.notes.some((n) => n.includes("reworded")) ? " " + board.notes.filter((n) => n.includes("reworded")).join("; ") + "." : ""}`}>updated · {board.updated.cards.length} {board.updated.cards.length === 1 ? "card" : "cards"}</span>}
         {checking && <span className="bd-checking" title="A second reader is checking every claim against the code; the dots on the notes update when it's done">double-checking</span>}
       </div>
+      <Rewrite job={job} fresh={fresh} onRewrite={onRewrite} />
       <ThemeButton className="bd-fl bd-gear bd-theme" />
       <button className="bd-fl bd-gear" onClick={onSettings} aria-label="Settings" title="Settings: voice, Claude"><Icon name="settings" size={18} /></button>
       {/* Out of the way, as in FigJam: zoom in, zoom out, and reset to the whole board. */}
@@ -294,7 +353,6 @@ function BoardView({ id, board, job, repoName, onHome, onSettings }: { id: strin
         <button onClick={() => void e?.fit()} aria-label="Reset: fit the board (F)" title="Reset: fit the board (F)"><Icon name="fit" size={13} /></button>
       </div>
 
-      {es && <Holding board={board} at={es.step} />}
       {voiceMenu && <div className="bd-voice-menu"><VoiceMenu onChange={() => e?.voiceChanged()} onClose={() => setVoiceMenu(false)} /></div>}
       {chat && es && e && <Chat board={board} es={es} engine={e} onClose={closeChat} ask={why?.q} backToTour={!!why} />}
       {/* The story bar: one place for what's being said, where you are, and what you can do next. */}
@@ -307,31 +365,35 @@ function BoardView({ id, board, job, repoName, onHome, onSettings }: { id: strin
             </div>
             <p ref={capP} />
           </div>
+          {es && <Holding board={board} at={es.step} />}
           {(said?.kind === "reveal" || said?.kind === "point") && said.claim && <Said claim={said.claim} checking={checking} className="bare" />}
           {said?.kind === "say" && said.analogy && <p className="bd-note" title="A picture to hold on to, not a claim about the code">An analogy</p>}
+          {step?.part === "flow" && !said?.claim && <Travels board={board} route={step.route} />}
           {step?.part === "intro" && !said?.claim && !said?.analogy && (board.example
             ? <div className="bd-ex"><p className="bd-note">The example comes from the repo's tests</p><Said claim={board.example} checking={checking} className="bare" /></div>
             : <p className="bd-note">The example is made up for this tour</p>)}
         </div>
         <div className="bd-bar-ctl">
-          <button onClick={() => e?.goStep((es?.step ?? 0) - 1)} aria-label="Previous step (←)" title="Previous step (←)"><Icon name="prev" size={16} fill /></button>
-          <button className="bd-play" onClick={() => e?.play()} aria-label={!es?.playing || paused ? "Play (space)" : "Pause (space)"}>{!es?.playing || paused ? <Icon name="play" size={15} fill /> : <Icon name="pause" size={15} fill />}{!es?.playing ? "Play" : paused ? "Resume" : "Pause"}</button>
-          <button onClick={() => e?.goStep((es?.step ?? 0) + 1)} aria-label="Next step (→)" title="Next step (→)"><Icon name="next" size={16} fill /></button>
+          <button onClick={() => e?.goStep((es?.step ?? 0) - 1)} aria-label="Previous step (←)" data-tip="Previous step (←)"><Icon name="prev" size={16} fill /></button>
+          <button className="bd-play" onClick={() => e?.play()} aria-label={!es?.playing || paused ? "Play (space)" : "Pause (space)"} data-tip={!es?.playing || paused ? "Play (space)" : "Pause (space)"}>{!es?.playing || paused ? <Icon name="play" size={15} fill /> : <Icon name="pause" size={15} fill />}{!es?.playing ? "Play" : paused ? "Resume" : "Pause"}</button>
+          <button onClick={() => e?.goStep((es?.step ?? 0) + 1)} aria-label="Next step (→)" data-tip="Next step (→)"><Icon name="next" size={16} fill /></button>
           <div className="bd-steps">
             {board.steps.map((st, i) => (
               <b key={i} role="button" aria-label={`Step ${i + 1}: ${PART[st.part]}`} title={PART[st.part]} className={`${i === es?.step ? "on" : i < (es?.step ?? 0) ? "done" : ""}${i > 0 && board.steps[i - 1]!.part !== st.part ? " gap" : ""}`} onClick={() => e?.goStep(i)} />
             ))}
           </div>
           <span className="bd-bar-gap" />
-          <button onClick={() => rateStore.set(nextRate(rate))} title="Speed">{rate}×</button>
+          <button onClick={() => rateStore.set(nextRate(rate))} aria-label={`Speed, now ${rate}×`} data-tip={`Speed: ${rate}× (click for ${nextRate(rate)}×)`}>{rate}×</button>
+          <button onClick={() => thinkStore.set(!think)} aria-pressed={think} className={think ? "on-soft" : ""} data-tip={think ? "Pausing after each question: click to stop" : "Pause after each question until you play on"} aria-label="Pause on questions"><Icon name="think" size={16} /></button>
           <button
             onClick={() => voiceOnStore.set(!voiceOn)}
             disabled={!voice?.available}
             aria-pressed={speak}
-            title={!voice ? "" : voice.available ? (voiceOn ? "Mute the narrator" : "Hear the narrator") : voice.reason}
+            aria-label={speak ? "Mute the narrator" : "Hear the narrator"}
+            data-tip={!voice ? "Narrator" : voice.available ? (voiceOn ? "Mute the narrator" : "Hear the narrator") : voice.reason}
           ><Icon name={speak ? "sound" : "muted"} size={18} /></button>
-          <button className={`bd-voice-more${voiceMenu ? " on" : ""}`} onClick={() => setVoiceMenu((o) => !o)} aria-expanded={voiceMenu} aria-haspopup="dialog" aria-label="Choose the narrator's voice" title="Choose the narrator's voice"><Icon name="chevron" size={13} /></button>
-          <button className={`bd-ask${chat ? " on" : ""}`} onClick={() => (chat ? closeChat() : setChat(true))} aria-pressed={chat} aria-label="Ask Docent" title="Ask Docent about this board (/)">
+          <button className={`bd-voice-more${voiceMenu ? " on" : ""}`} onClick={() => setVoiceMenu((o) => !o)} aria-expanded={voiceMenu} aria-haspopup="dialog" aria-label="Choose the narrator's voice" data-tip="Choose the narrator's voice"><Icon name="chevron" size={13} /></button>
+          <button className={`bd-ask${chat ? " on" : ""}`} onClick={() => (chat ? closeChat() : setChat(true))} aria-pressed={chat} aria-label="Ask Docent" data-tip="Ask Docent about this board (/)">
             <Icon name="ask" size={16} /><span className="bd-ask-t">Ask</span>
           </button>
         </div>

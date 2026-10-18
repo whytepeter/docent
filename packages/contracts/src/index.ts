@@ -3,9 +3,9 @@
  * nothing else crosses the boundary.
  */
 import type { Confidence, EdgeKind, FileFact, SymbolKind } from "@docent/extract";
-import type { Board, Episode, Feature, FeatureAnalysis, FeatureMap, Flow, FlowList, ProjectOverview } from "@docent/analyze";
+import type { Board, Episode, Feature, FeatureAnalysis, FeatureMap, Flow, FlowList, Freshness, ProjectOverview } from "@docent/analyze";
 
-export type { Board, Episode, Feature, FeatureAnalysis, FeatureMap, Flow, FlowList, ProjectOverview };
+export type { Board, Episode, Feature, FeatureAnalysis, FeatureMap, Flow, FlowList, Freshness, ProjectOverview };
 
 /** The flows Docent proposed for this codebase, and the job proposing them. */
 export interface FlowsState {
@@ -18,6 +18,8 @@ export interface FlowsState {
   overviewJob: Job | null;
   /** Boards being drawn now, or finished in the last few minutes, so leaving a board never hides its progress. */
   drawing: { id: string; title: string; job: Job }[];
+  /** Ready boards whose code changed since they were drawn. */
+  stale: string[];
 }
 
 /** One flow's board (once written) and the job writing or checking it. */
@@ -25,6 +27,8 @@ export interface BoardState {
   flow: Flow;
   board: Board | null;
   job: Job | null;
+  /** Whether the board is still true to the code, card by card. Code that only moved is fixed before it's sent. */
+  fresh: Freshness | null;
 }
 
 /** An episode and whether the feature's code changed since it was written. */

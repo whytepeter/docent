@@ -27,8 +27,10 @@ export class RepoService {
     const root = resolve(repo);
     const cached = loadCachedFacts(root);
     const meta = readMeta(root);
-    if (cached && meta) return new RepoService(root, cached, meta.fingerprint);
     const fingerprint = currentFingerprint(root);
+    // Cached facts are used only while the code is as they describe it; otherwise the repo is read again.
+    if (cached && meta && meta.fingerprint === fingerprint) return new RepoService(root, cached, meta.fingerprint);
+    if (cached) log("The code changed since it was last read; reading it again");
     const facts = extract(root, { onStage: (stage) => log(stage) });
     saveFacts(root, facts);
     writeMeta(root, fingerprint);

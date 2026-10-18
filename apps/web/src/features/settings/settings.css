@@ -13,7 +13,7 @@
 .set-malt { display: inline-flex; align-items: center; gap: 7px; margin: 10px 6px 0; font: 600 12px var(--sans); color: var(--ink-3); text-decoration: none; transition: color .15s; }
 .set-malt:hover { color: var(--accent); }
 .set-body { position: relative; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--scroll-thumb, rgba(17, 24, 39, .18)) transparent; scrollbar-gutter: stable; padding: 22px 26px 26px; display: flex; flex-direction: column; gap: 22px; }
-.set-x { position: absolute; right: 12px; top: 12px; width: 32px; height: 32px; border: 0; border-radius: 10px; background: none; color: var(--ink-3); display: grid; place-items: center; cursor: pointer; }
+.set-x { position: absolute; z-index: 2; right: 18px; top: 12px; width: 32px; height: 32px; border: 0; border-radius: 10px; background: var(--card); color: var(--ink-3); display: grid; place-items: center; cursor: pointer; }
 .set-x:hover { background: var(--fill); color: var(--ink); }
 .set-h { padding-right: 36px; }
 .set-h h3 { margin: 0; font: 700 20px var(--display); letter-spacing: -.02em; color: var(--ink); }

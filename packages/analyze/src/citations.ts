@@ -23,7 +23,13 @@ export function makeChecker(root: string, facts: Facts) {
 
   const checkEvidence = (e: { file: string; start: number; end: number; mentions: string[] }): CheckResult => {
     if (!known.has(e.file)) return { ok: false, reason: `no file ${e.file} in the repo` };
-    const lines = linesOf(e.file);
+    let lines: string[];
+    try {
+      lines = linesOf(e.file);
+    } catch {
+      // Deleted since the facts were taken (a board checked again after the code changed).
+      return { ok: false, reason: `${e.file} can't be read any more` };
+    }
     if (e.start < 1 || e.start > lines.length || e.end < e.start) return { ok: false, reason: `lines ${e.start}–${e.end} don't exist (file has ${lines.length})` };
     const named = e.mentions.map((m) => m.trim()).filter(Boolean);
     if (!named.length) return { ok: false, reason: `lines ${e.start}–${e.end} cite nothing to look for` };

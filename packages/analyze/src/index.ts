@@ -1,5 +1,6 @@
 export { answerQuestion, type AskBox, type AskInput, type CheckedAnswer } from "./ask.ts";
-export { checkBoard, citeBoard, cleanBoard, flowTests, proposeFlows, upgradeBoard, valueFits, writeBoard, type Beat, type Held, type BeatTone, type Board, type BoardCard, type BoardStep, type Hop, type Flow, type FlowList } from "./board.ts";
+export { checkBoard, citeBoard, cleanBoard, flowTests, proposeFlows, updateBoard, upgradeBoard, valueFits, writeBoard, type Beat, type BoardEdge, type Held, type Part, type BeatTone, type Board, type BoardCard, type BoardStep, type Hop, type Flow, type FlowList } from "./board.ts";
+export { freshness, refreshBoard, type CardFreshness, type Freshness } from "./board-fresh.ts";
 export { discoverFeatures, validateDiscovery } from "./discover.ts";
 export { clean as cleanEpisode, narrationLine, writeEpisode, type Episode, type NarrationTone } from "./episode.ts";
 export { filesHash, verifyAll, verifyFeature } from "./verify.ts";

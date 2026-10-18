@@ -56,6 +56,7 @@ export const api = {
   writeOverview: () => request<Job>("/api/overview/write", { method: "POST" }),
   board: (id: string) => request<BoardState>(`/api/boards/${q(id)}`),
   writeBoard: (id: string) => request<Job>(`/api/boards/${q(id)}/write`, { method: "POST" }),
+  updateBoard: (id: string) => request<Job>(`/api/boards/${q(id)}/update`, { method: "POST" }),
   stopBoard: (id: string) => request<Job | null>(`/api/boards/${q(id)}/stop`, { method: "POST" }),
   boardVoice: (id: string, at: number, beat: number) => request<VoiceClip>(`/api/boards/${q(id)}/voice`, json({ at, beat })),
   settings: () => request<Settings>("/api/settings"),
