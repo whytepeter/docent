@@ -1,5 +1,5 @@
 import {
-  ArrowLeft, ArrowUp, Box, Check, ChevronRight, CircleAlert, Cloud, Download, Laptop, FileArchive, FileCode, GitBranch, Folder, FolderDown, FolderOpen, LayoutGrid, Lock, Maximize, MessageCircle, Minus, Network, PanelLeft, PanelRight, Pause, Play, Plus, RotateCw, Search, Settings, SkipBack, SkipForward, Sparkles, Square, SquareFunction, Volume2, VolumeX, X, Sun, Moon, Monitor,
+  ArrowLeft, ArrowUp, Beer, Box, Check, ChevronRight, CircleAlert, Cloud, Download, Laptop, FileArchive, FileCode, GitBranch, Folder, FolderDown, FolderOpen, LayoutGrid, Lock, Maximize, MessageCircle, Minus, Network, PanelLeft, PanelRight, Pause, Play, Plus, RotateCw, Search, Settings, SkipBack, SkipForward, Sparkles, Square, SquareFunction, Volume2, VolumeX, X, Sun, Moon, Monitor,
   type LucideIcon,
 } from "lucide-react";
 
@@ -30,6 +30,7 @@ const ICONS = {
   settings: Settings,
   check: Check,
   lock: Lock,
+  malt: Beer,
   claude: Sparkles,
   plus: Plus,
   minus: Minus,

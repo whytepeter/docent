@@ -68,10 +68,7 @@ docent stats <repo>        summarize the saved facts
 
 ## Languages
 
-- **TypeScript and JavaScript** (React, Next.js, Node, Express, NestJS and similar): full support. The call graph (who calls what, who imports what, which tests cover a function) comes from the TypeScript compiler.
-- **Vue, Svelte and Angular**: they work, but with less backing. Their `.ts` and `.js` files are in the call graph; Vue and Svelte components aren't yet, and Angular's dependency injection and templates aren't followed. Boards on these projects lean more on reading the files, and every claim is still checked against the cited lines.
-- **Python and Go**: files are read, but there's no call graph.
-- **Other languages** aren't read yet.
+Docent works best on TypeScript and JavaScript projects: React, Next.js, Node, NestJS, and Vue, Nuxt and Svelte components, whose scripts and templates are in the call graph too. Angular works, but its dependency injection and templates aren't followed yet. Python and Go are read without a call graph, so boards on them lean more on reading the code. Other languages, such as Java, Ruby, PHP and Rust, aren't read yet.
 
 ## Develop
 
@@ -83,6 +80,10 @@ pnpm dev
 ```
 
 `pnpm dev` runs the API on port 4477 and the web app on 5173 (it proxies `/api`). Open a codebase from the welcome page. See [CONTRIBUTING.md](CONTRIBUTING.md) for the layout and the checks.
+
+## Support
+
+Docent is free and open source. If it helps you, you can [buy me a malt](https://buymeamalt.com/@whytepeter).
 
 ## License
 

@@ -341,6 +341,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
             </button>
           ))}
           <p className="set-foot"><Icon name="lock" size={13} /><span>Keys stay in Docent's own <code>.env</code> on this computer, never in a repo, and are never shown in full.</span></p>
+          <a className="set-malt" href="https://buymeamalt.com/@whytepeter" target="_blank" rel="noopener noreferrer"><Icon name="malt" size={14} />Buy me a malt</a>
         </nav>
         <div className="set-body">
           <button className="set-x" onClick={onClose} aria-label="Close"><Icon name="close" size={16} /></button>

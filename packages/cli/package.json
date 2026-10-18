@@ -19,6 +19,7 @@
   },
   "homepage": "https://github.com/whytepeter/docent#readme",
   "bugs": "https://github.com/whytepeter/docent/issues",
+  "funding": "https://buymeamalt.com/@whytepeter",
   "type": "module",
   "bin": {
     "docent": "dist/docent.js"

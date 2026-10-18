@@ -20,7 +20,7 @@ function ago(iso: string): string {
 
 const STEPS = [
   { icon: "system", title: "Finds the flows", text: "Reads the code and picks out what the app actually does." },
-  { icon: "play", title: "Draws each one", text: "A whiteboard you can tour step by step, built from real files." },
+  { icon: "play", title: "Draws each one", text: "A board you can tour step by step, built from real files." },
   { icon: "ask", title: "Answers with evidence", text: "Ask anything. Every claim points at the code behind it." },
 ] as const;
 
@@ -214,8 +214,8 @@ export function OpenRepo({ workspace, onSettings }: { workspace: Workspace; onSe
       </header>
       <div className="wel-body">
         <section className="wel-hero">
-          <h1>Learn a codebase<br />on a whiteboard.</h1>
-          <p>Open a project folder, a GitHub repo or a zip. Docent finds its main flows and draws each one from the real code, so you can tour it, ask about it and check what’s true.</p>
+          <h1>See how a codebase works,<br />drawn from its own code.</h1>
+          <p>Open a project folder, a GitHub repo or a zip. Docent finds its main flows and draws each one as a board you can tour, ask about and check.</p>
         </section>
 
         <section className={`wel-open${dragging ? " on" : ""}`} aria-label="Open a codebase">

@@ -18,14 +18,14 @@ docent/
 │   │       │   ├── ask/            chat threads and streaming answers (used by the board's chat)
 │   │       │   ├── code/           code sheet and excerpts with highlighted lines (Shiki)
 │   │       │   ├── jobs/           background job state and the job pill
-│   │       │   ├── settings/       narrator, Claude, appearance
-│   │       │   └── workspace/      open a codebase
+│   │       │   ├── settings/       narrator, AI provider, appearance (page and editor theme)
+│   │       │   └── workspace/      welcome page: open a folder, a zip or a GitHub URL
 │   │       └── shared/         design tokens, UI primitives, API client, stores, theme
 │   └── server/                 local server (Hono)
 │       └── src/
 │           ├── app.ts          wires features into one Hono app
 │           └── features/
-│               ├── workspace/  which codebase is open, recent ones, the folder picker
+│               ├── workspace/  which codebase is open, recent ones, the picker, GitHub clones, zip imports
 │               ├── repo/       extract or load cached facts
 │               ├── boards/     flows, overview, boards, background drawing jobs, stop
 │               ├── ask/        scoped questions, checked answers (SSE)
@@ -33,11 +33,11 @@ docent/
 │               ├── graph/      queries over facts
 │               ├── source/     read-only file content by range
 │               ├── voice/      narration clips
-│               └── settings/   keys, voice, Claude mode
+│               └── settings/   keys, voice, AI provider
 └── packages/
     ├── extract/                stage 1: facts from code, git and docs (no LLM)
     ├── analyze/                Claude stages: features, verify, flows, boards, overview, ask, the checks
-    ├── llm/                    Claude Code (subscription) or the API behind one interface
+    ├── llm/                    Claude Code, Codex (subscriptions) or an Anthropic API key, behind one interface
     ├── voice/                  Cartesia and Fish Audio (cloud), Kokoro (local, downloaded to ~/.docent/models)
     ├── contracts/              types shared by server and app
     └── cli/                    `docent <repo>`: starts the server, opens the browser
@@ -109,7 +109,7 @@ References: FigJam (sections, floating chrome), Eraser (pastel group tints, soft
 - **Cards:** a tinted layer chip with an icon for what the item is (area, file, function, component), and compact stats with icons instead of a truncated line.
 - **Thin custom scrollbars** everywhere.
 
-### M3: Features, flows, claims, health — in progress
+### M3: Features, flows, claims, health ✅
 Runs on your Claude subscription through `packages/llm` (an API key is optional).
 - Feature discovery (Claude) from entry points, the call graph and co-change, then **a review screen where I rename, merge or split**. The map is frozen after that.
 - One verification worker per feature (Agent SDK, read-only tools): it traces the flow, sets a status, and writes claims with evidence.
@@ -160,7 +160,9 @@ A first-timer shouldn't have to know about discovery, review, approval, verifica
 - **Waits say what's happening:** every job reports a plain-words stage, the features in flight, and a time estimate refined from real progress; the progress bar moves with time and never goes back.
 - **Pacing:** playback speed (1×, 1.25× default, 1.5×, 1.75×) for voice and text; shorter gaps between steps; the next two clips are fetched ahead, and the first two while the intro shows.
 
-### M3.5: Ask Docent (chat that explains with the canvas) — first version done
+### M3.5: Ask Docent (chat that explains with the canvas) ✅
+*Since moved onto the board: see M5.5.*
+
 Built: `/` or the chat button opens a panel scoped to the current view. The server builds the context from the view (facts, the function's code, what verification established for the features it belongs to) and Claude answers with read-only tools. Every paragraph goes through the citation check and the second reader, like verification claims. Progress streams (reading, answering, checking). The diagram publishes its boxes; Claude sees them as short refs (b1, b2…) and can only point at those (P11: no new boxes). "Show me" plays the scene: boxes light, links animate in their real direction, the camera follows, and the panel shrinks to the caption. "Explain simpler" asks again with an analogy first. Threads are kept per view while the app is open.
 Checked on the test app's hand-traced function: "What happens if the storage upload fails for one side?" gave 5 labeled paragraphs and a 5-step scene. On its own it found that the other side's upload isn't cancelled (the hand tracing's finding, labeled inferred), and the second reader caught an overstatement about which errors show a message.
 Next for it: answers that jump to a view that would show more when the current one can't; keeping threads across reloads.
@@ -171,7 +173,9 @@ The user can chat with Docent whenever something isn't clear, and the answer can
 - **Explains with the canvas:** an answer can include a short "scene": which boxes to highlight, which links to animate, in what order, with one caption per step. The canvas plays it with the same motion as episodes (camera glides, particles along links). "Show me" replays it; "explain simpler" asks again with an analogy first.
 - **Remembers the thread** per view, and lets the user jump from an answer straight to the box or line it mentions.
 
-### M4: Episodes (Learn mode) — first episode built, waiting on your review
+### M4: Episodes (Learn mode): replaced by the board
+*Episodes were built and then replaced by the board's guided tour (M5.5). The player is gone from the app; `docent episode` and `docent voice` remain in the CLI.*
+
 Built:
 - **Content** (`packages/analyze/episode.ts`, `EpisodeSchema`): Claude writes from the feature's verified analysis: a plain intro, an analogy, a cast of 3–8 boxes each tied to real files and lines, 4–7 scenes with one objective each, steps pairing lit boxes with ~35 spoken words, a caption, the code lines, labeled packets, and a claim with evidence. One or two predict steps, the five self-check questions, and a hands-on exercise with a way to check it. A mechanical clean-up drops boxes that don't stand for real code (and the links, packets and ranges that point at them); every claim goes through the citation check and the second reader.
 - **Player** (`features/episode`, route `#/episode/<id>`): intro card, then the cast on the canvas laid out in lanes. Each step lights its boxes, plays its packets one after another in causal order (looping), frames the camera on them, and the code panel follows. Predict pauses until answered, then reveals with evidence. Space, ← and → drive it. Clicking a box pauses and shows its code with "Open in Work mode"; a "Back to the episode, step N" pill returns to the same step from anywhere, and position survives reloads. The map folds away while playing (P10). The end card holds the self-check (answers hidden) and the exercise.
@@ -188,7 +192,9 @@ the test app's document upload: 6 scenes, 20 steps, 7 boxes, 26 claims (24 confi
 
 *Done when:* a generated episode for document upload is as clear and accurate as the hand tracing.
 
-### M5: Voice (pluggable) — built, waiting on a Cartesia key
+### M5: Voice (pluggable) ✅
+*Cartesia, Fish Audio and Kokoro (on this computer) all work; see Oct 17–18 below for Kokoro.*
+
 Built: `packages/voice` with the `VoiceAdapter` interface below and a Cartesia adapter (`/tts/sse`, `sonic-3.6`, word timestamps), WAV clips cached in `~/.docent/voice/` by a hash of text + provider + voice. The server speaks a step only by episode and step number, so only narration text reaches the provider. The player's narration types word by word on the voice's clock (each word appears when it's spoken); pause freezes voice and text mid-line, play carries on, and the step moves on when the voice ends. Without a key it falls back to an estimated pace (2.6 words/s) and the speaker button explains why. Mute is remembered. The next line is fetched while the current one plays.
 Checked with a stand-in voice in the browser; not yet with Cartesia itself. To hear it: put `CARTESIA_API_KEY` in Docent's `.env` (gitignored; see `.env.example`) and restart. The CLI and the dev server both load it; a key already in the shell wins. Since then:
 - **Settings panel** (gear, top right): pick the narrator's provider (Cartesia or Fish Audio), paste or replace its key (tested by speaking a word before it's saved; stored in Docent's `.env`; only a masked hint comes back), search and preview voices (yours first) and choose one per provider, narration speed, an "expressive" switch, and Claude by subscription or API key.
@@ -237,12 +243,20 @@ The map-and-inspector screens gave way to one idea: pick a flow of the codebase,
 - **Faster (Oct 17).** The board writer gets the flow's files in its prompt, numbered, instead of opening each one with a tool (a board on the test app: 188 s → 126 s). The second reader runs at low effort in batches of 6 claims, 3 at once, everywhere it's used (board double-check about 70 s → 15 s; chat about 23 s → 6.5 s), and still refutes what it should. Chat answers on a board are kept on disk per board (`~/.docent/repos/<repo>/answers/`), valid while the board and the commit are unchanged: a repeated question is answered at once, and the conversation comes back after a reload.
 - No reading holds between cards (tried and rejected: the learner pauses when they want to read). The open card sits above the cards it grows over. The code sheet is always dark, like the code on the cards.
 
-**Backlog:** a stop button on the board's own drawing screen; chat answers kept across reloads.
+**Naming (Oct 18, user decision):** a flow's whiteboard is a **board**; the tour is what you take through it.
 
-### M6: Work-mode depth
-- Must stay true, if you change it, when it breaks, break-it, and exercises, generated per function.
-- `ran it` probes in a scratch copy, never the real repo.
-- "Explain this deeper" on demand, streamed, then cached.
+**Backlog:** none open. The drawing screen has its own stop button, and chat answers are kept on disk per board (see "Faster" above).
+
+### Oct 17–18: opening, providers, voices, polish
+- **Welcome page** (`features/workspace`): drop a folder or a `.zip` anywhere, press Choose… for one macOS dialog that takes either, or paste a folder path, a `.zip` path or a GitHub URL. Recent projects, a project switcher, and each project at `#/repo/<name>`.
+- **GitHub and zip:** a GitHub URL (or `owner/repo`, SSH, `/tree/<branch>`) is cloned with full history into `~/.docent/checkouts` with the user's own git sign-in; opening it again offers to pull. A zip is unpacked into `~/.docent/imports` with plain files only and size caps. Folders without git are read too; the facts say there's no history.
+- **AI providers** (`packages/llm`): one interface for Claude Code, Codex (`codex exec` on a ChatGPT plan) and an Anthropic API key. Each CLI runs headless and isolated, with the prompt redacted and the reply checked against its schema. Settings' tab is "AI"; `docent doctor` checks the chosen one.
+- **Kokoro** (on this computer): Kokoro 82M on onnxruntime-node, downloaded once (about 107 MB) to `~/.docent/models/kokoro`, real per-word timings, works offline. The narrator is grouped as Cloud or On this computer, and a voice menu sits next to the speaker in the story bar.
+- **Readable board at every zoom:** zoomed out, cards show just their number and title; each step frames its card at a readable zoom.
+- **Editor theme:** Dark or Light code (GitHub Dark or Light), previewed as mini editors, whatever the page theme.
+- **Stop on the drawing screen** (Oct 18): "Stop drawing" with a confirm, beside "Other flows"; stopping returns to the flows.
+- **Choose… fixed** (Oct 18): the open dialog came up behind the browser, because macOS 14+ ignores `activateIgnoringOtherApps` from a background process. It now floats on top.
+- **Welcome headline** (Oct 18): "See how a codebase works, drawn from its own code."
 
 ### Open source and npm (Oct 17)
 - **One package, `codedocent`:** `packages/cli/build.mjs` bundles the CLI, the server and Docent's packages into `dist/docent.js` (esbuild), with the built web app beside it in `dist/web`. npm packages stay imports, and the build fails if one isn't listed in the package's dependencies. The tarball is about 2.5 MB; an install is about 60 MB.
@@ -251,11 +265,21 @@ The map-and-inspector screens gave way to one idea: pick a flow of the codebase,
 - **The local voice's runtime comes with its weights.** onnxruntime-node (about 290 MB) and phonemizer aren't in the install; downloading Kokoro in Settings installs them into `~/.docent/models/kokoro/runtime` with npm. A checkout uses the workspace's copies.
 - README, MIT license, CONTRIBUTING and a CI workflow (typecheck, tests, build). The private test repos' names and the hand-built mockup are out of the repo.
 
+### M6: Deeper explanations
+- "Explain this deeper" on demand, streamed, then cached.
+- `ran it` probes in a scratch copy, never the real repo.
+- *Dropped:* per-function exercises and break-it drills. Docent guides; it doesn't set homework (Oct 17 decision).
+
 ### M7: Freshness
 - Hash-based stage caching, incremental re-runs, a file watcher marking stale views.
 
-### M8: Monorepos
-- Vue single-file components, workspace (multi-app) repos, per-app entry points.
+### M8: More languages and monorepos
+Today the call graph covers TypeScript, JavaScript, and Vue and Svelte components. Other files are read as text only, so boards on them lean more on reading the code.
+- **Vue and Svelte ✅ (Oct 18):** each component goes to the compiler as its script view (`Foo.vue.ts`: the `<script>` blocks in place, everything else blanked, lines unchanged), so imports of `./Foo.vue` resolve and the script's calls are edges. The component is one symbol; its template adds `renders` edges (through imports, or by Nuxt's auto-import names, labeled inferred) and `calls` edges to the script functions its handlers and bindings use. On a 635-component Nuxt app: 1,849 renders and 1,021 calls in 10 s. Not yet: global components registered in code, Vue's `components: {}` option under another name, slots.
+- **Angular:** detected (`@angular/core`) ✅. Still to do: routes, dependency injection and template bindings.
+- **Python and Go:** a call graph (tree-sitter, or each language's own tooling).
+- **Other languages** (Java, Ruby, PHP, Rust…): not read at all yet.
+- **Monorepos:** workspace (multi-app) repos, an entry point per app.
 
 ## Working agreements
 - Every milestone ends with tests passing, a typecheck, and a check against the test app.

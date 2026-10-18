@@ -16,3 +16,6 @@ dist/
 # Copied into the npm package at build time (from the repo root)
 packages/cli/README.md
 packages/cli/LICENSE
+
+# Demo videos (too large for the repo)
+docs/media/

@@ -75,7 +75,7 @@ export function Home({ repoName, switcher, onOpen, onBack, onSettings }: { repoN
 
         {state && <section className="bd-home-flows" aria-labelledby="bd-flows-h">
           <h2 id="bd-flows-h">What do you want to understand?</h2>
-          <p className="bd-home-sub">Pick a flow. Docent draws it on a whiteboard from the real code and takes you through it: one request from start to end, what happens when it goes wrong, and why it is built that way.</p>
+          <p className="bd-home-sub">Pick a flow. Docent draws it as a board from the real code and takes you through it: one request from start to end, what happens when it goes wrong, and why it is built that way.</p>
           {failed && (
             <p className="bd-home-err">
               Couldn't find the flows: {state?.job?.error}{" "}
