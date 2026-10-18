@@ -73,8 +73,13 @@ const Beat = z.object({
   tone: z.enum(TONES).describe("calm (explaining, the default), warm (this part is solid), curious (a question), concerned (a risk), emphatic (the one thing to remember)"),
   lines: z.array(z.number().int()).describe("point and reveal: the 1 to 3 lines (absolute numbers inside this step's card excerpt) to mark while this is said. Otherwise []"),
   values: z.array(z.object({ line: z.number().int(), text: z.string().describe("Under 40 characters, e.g. 'file.size = 3 MB → passes', 'status 403 → expired'") }))
-    .describe("point and reveal: what the intro's example request holds at these lines as it passes, written beside them. Only values that follow from the example and the code; otherwise []"),
-  claim: Claim.nullable().describe("reveal only: what the answer asserts, with evidence; the spoken text must not say more. Otherwise null"),
+    .describe("point and reveal: what the intro's example request holds at these lines as it passes, written beside them. Write 'name = value' with a name that appears on that line, or a short outcome ('→ passes'). Only values that follow from the example and the code; otherwise []"),
+  claim: Claim.nullable().describe("point and reveal: what this beat says about the code, with evidence on the lines it marks; the spoken text must not say more. say and ask: null"),
+  analogy: z.boolean().describe("say only: true for the intro's everyday analogy, which is a picture and not a claim about the code. Otherwise false"),
+});
+const Held = z.object({
+  key: z.string().describe("A name a newcomer would track, e.g. 'user._id', 'session', 'attempt'"),
+  value: z.string().describe("Under 30 characters, e.g. '66a1…f3', 'open', '2 of 3'"),
 });
 const Hop = z.object({
   edge: z.string().describe("'from>to' card ids"),
@@ -105,7 +110,9 @@ const BoardSchema = z.object({
     route: z.array(z.string()).describe("flow: edges the request travels to reach this card, as 'from>to' card ids. Otherwise []"),
     hops: z.array(Hop).describe("fail: the path the request takes when it goes wrong, the last hop 'bad'. Otherwise []"),
     beats: z.array(Beat).describe("2 to 5 beats, in the order they happen"),
+    state: z.array(Held).describe("intro and flow: what the example holds once this step has run, 2 to 5 things worth tracking, carried forward from earlier steps (drop what stops mattering). Plain data the request carries (ids, flags, statuses), never a conclusion the step reveals. Otherwise []"),
   })).describe("In order: intro; one flow step per card; 1 to 3 fail steps; 1 to 3 why steps; close"),
+  example: Claim.nullable().describe("Where the intro's example comes from: the test lines that build that request, with evidence. null when the example is made up"),
 });
 type BoardSpec = z.infer<typeof BoardSchema>;
 
@@ -132,8 +139,16 @@ export interface Beat {
   lines: number[];
   /** What the example request holds at some of those lines, written beside them. */
   values: { line: number; text: string }[];
-  /** reveal only. */
+  /** point and reveal: what it says about the marked lines. A point the writer left unclaimed is an inferred guess. */
   claim: AnalysisClaim | null;
+  /** say only: the intro's everyday analogy, a picture rather than a claim. */
+  analogy: boolean;
+}
+/** Something the example holds once a step has run, and how it differs from the step before. */
+export interface Held {
+  key: string;
+  value: string;
+  change: "new" | "changed" | "same";
 }
 export type Hop = z.infer<typeof Hop>;
 export interface BoardStep {
@@ -143,11 +158,13 @@ export interface BoardStep {
   route: string[];
   hops: Hop[];
   beats: Beat[];
+  /** intro and flow: what the example holds once this step has run. */
+  state: Held[];
 }
 
 export interface Board {
-  /** 3: one tour (intro, flow, fail, why, close). Older boards are upgraded on load. */
-  version: 3;
+  /** 4: one tour (intro, flow, fail, why, close) with labeled points and the example's state. Older boards are upgraded on load. */
+  version: 4;
   flowId: string;
   generatedAt: string;
   model: string;
@@ -159,6 +176,8 @@ export interface Board {
   cards: BoardCard[];
   edges: BoardSpec["edges"];
   steps: BoardStep[];
+  /** Where the intro's example comes from (test lines), or null when it was made up. */
+  example: AnalysisClaim | null;
   notes: string[];
 }
 
@@ -168,20 +187,22 @@ The code of the flow's files is below the facts, with line numbers: work from it
 - 3 to 6 cards, one per part the request passes through, in order. Each card shows a real excerpt of a file: give the file and the line range (8–20 lines that matter); Docent cuts the code from the file itself.
 - Edges between cards with what travels along them.
 - The tour is the whole board. Its steps, in order:
-  - intro (no card): one concrete situation, a real-looking request with plausible values, and the question the tour answers.
+  - intro (no card): one concrete situation, a real-looking request, and the question the tour answers. If a test below builds such a request, use its values and cite those lines as the example; otherwise make up plausible values and set example to null. Then one everyday analogy for the whole flow, before any code names (a say beat with analogy true; "like posting a parcel: get a label, drop it at the depot, keep the receipt").
   - flow: one step per card, following that same request (route = the edges it travels to get there). Say why the part exists (the problem it solves) before how it works.
   - fail: 1 to 3 steps on what goes wrong that matters (an expired link, storage refusing, a stall). hops = the path the request takes, with the status each card shows, the last one bad. Say what the user sees and which code decides it.
   - why: 1 to 3 steps on the design choices a reviewer would question ("Why retry only on 401/403?"). Ask it, answer it with evidence, and say what would break without it.
   - close (no card): tie it together in the one sentence they can say out loud.
 - Each step is a few beats:
-  - say: Docent talks.
-  - point: Docent talks while marking 1 to 3 exact lines on the card, like a hand on the whiteboard. Every flow step points at least once, at the lines that do the work.
+  - say: Docent talks: sets the scene, connects one step to the next, explains a term. Anything about what the code does is a point or a reveal instead, so it carries a claim.
+  - point: Docent talks while marking 1 to 3 exact lines on the card, like a hand on the whiteboard, with a claim: what was said about those lines, with evidence on them. Every flow step points at least once, at the lines that do the work.
   - ask: a question a newcomer would be wondering right now. Docent asks it and answers it itself in the very next beat (a reveal); nobody is quizzed. Use a few, where they help, not on every step.
   - reveal: the answer, with a claim and evidence, marking the lines it rests on.
 - Make it a trace of the example, not a reading of the code: on point and reveal beats, give values for what the example request holds at those lines as it passes ("file.size = 3 MB → passes", "attempt = 2", "status 403 → expired"). Only what follows from the example and the code.
+- Keep the example's state: on intro and each flow step, list the few things it holds once that step has run (an id it was given, a flag, a status), carried forward, so the newcomer sees it build up from card to card.
+- The first time a framework or domain term comes up (a transaction, a presigned URL, an idempotency key, a decorator), say what it is in one plain sentence.
 - Talk like a senior engineer at a whiteboard: "you", short sentences, callbacks to earlier steps ("remember the token from the first card?"), the occasional opinion ("this is the clever bit"). Never theatrical. Spoken text is for the ear: no paths or code read aloud.
 
-Every claim (why, say, reveals) carries a label and evidence: file, start line, end line, and mentions (identifiers or short exact snippets in those lines). A script checks them and a second reader tries to refute every confirmed claim. "confirmed" = read in the code; "inferred" = a reasoned guess; "unknown" = can't tell from this repo; "record" = a commit says so (give the sha). Never invent a reason: if nothing records why, say so. Use only files that exist.`;
+Every claim (why, say, points, reveals, the example) carries a label and evidence: file, start line, end line, and mentions (identifiers or short exact snippets in those lines). A script checks them and a second reader tries to refute every confirmed claim. "confirmed" = read in the code; "inferred" = a reasoned guess; "unknown" = can't tell from this repo; "record" = a commit says so (give the sha). Never invent a reason: if nothing records why, say so. Use only files that exist.`;
 
 /** Writes a board in one Claude pass, then makes it mechanically sound. Claims are checked separately (checkBoard). */
 export async function writeBoard(llm: LlmProvider, facts: Facts, root: string, flow: Flow, { signal }: { signal?: AbortSignal } = {}): Promise<Board> {
@@ -193,6 +214,8 @@ export async function writeBoard(llm: LlmProvider, facts: Facts, root: string, f
     featureDigest(facts, flow.files),
     "",
     flowSource(root, flow.files),
+    "",
+    flowSource(root, flowTests(facts, flow.files), "Tests that exercise the flow (line numbers are real; if one builds a request, it can be the intro's example):", TEST_LINES, TEST_CHARS),
   ].join("\n");
   const result = await llm.ask({ system: BOARD_SYSTEM, prompt, schema: BoardSchema, tools: llm.canRead ? "read" : "none", cwd: root, effort: "medium", signal });
   // The citation check is mechanical and instant, so it runs before the board is shown; the second reader runs behind it.
@@ -201,13 +224,29 @@ export async function writeBoard(llm: LlmProvider, facts: Facts, root: string, f
 
 const FILE_LINES = 700;
 const SOURCE_CHARS = 150_000;
+const TEST_FILES = 2;
+const TEST_LINES = 300;
+const TEST_CHARS = 30_000;
+
+/** The test files that reach the flow's files, those with the most links first, so the example can come from a real test. */
+export function flowTests(facts: Facts, files: string[]): string[] {
+  const set = new Set(files);
+  const links = new Map<string, number>();
+  for (const e of facts.edges) {
+    if (!e.from.includes("#test:") || !set.has(e.to.split("#")[0]!)) continue;
+    const t = e.from.split("#")[0]!;
+    links.set(t, (links.get(t) ?? 0) + 1);
+  }
+  return [...links].sort((a, b) => b[1] - a[1]).slice(0, TEST_FILES).map(([t]) => t);
+}
 
 /**
  * The flow's own files, numbered, so the writer starts with the code in hand instead of opening each file
  * with a tool call. Long files are cut (and say so); the writer can still read the rest.
  */
-function flowSource(root: string, files: string[]): string {
-  const out = ["The code of the flow's files (line numbers are real; cite them):"];
+function flowSource(root: string, files: string[], title = "The code of the flow's files (line numbers are real; cite them):", maxLines = FILE_LINES, maxChars = SOURCE_CHARS): string {
+  if (!files.length) return "";
+  const out = [title];
   let used = 0;
   for (const f of files) {
     let lines: string[];
@@ -216,14 +255,14 @@ function flowSource(root: string, files: string[]): string {
     } catch {
       continue;
     }
-    const shown = lines.slice(0, FILE_LINES).map((l, i) => `${String(i + 1).padStart(5)}  ${l}`).join("\n");
-    if (used + shown.length > SOURCE_CHARS) {
+    const shown = lines.slice(0, maxLines).map((l, i) => `${String(i + 1).padStart(5)}  ${l}`).join("\n");
+    if (used + shown.length > maxChars) {
       out.push("", `=== ${f} (${lines.length} lines) — not included, too much code already; read it if you need it`);
       continue;
     }
     used += shown.length;
     out.push("", `=== ${f} (${lines.length} lines)`, shown);
-    if (lines.length > FILE_LINES) out.push(`… cut at line ${FILE_LINES} of ${lines.length}; read the file for the rest`);
+    if (lines.length > maxLines) out.push(`… cut at line ${maxLines} of ${lines.length}; read the file for the rest`);
   }
   return out.join("\n");
 }
@@ -242,6 +281,7 @@ function putClaims(board: Board, claims: AnalysisClaim[]): Board {
     ...board,
     cards: board.cards.map((c) => ({ ...c, why: next(), say: next() })),
     steps: board.steps.map((s) => ({ ...s, beats: s.beats.map((bt) => (bt.claim ? { ...bt, claim: next() } : bt)) })),
+    example: board.example ? next() : null,
   };
 }
 
@@ -284,47 +324,93 @@ export function cleanBoard(spec: BoardSpec, facts: Facts, root: string, flowId: 
   const edgeKeys = new Set(edges.map((e) => `${e.from}>${e.to}`));
   const byId = new Map(cards.map((c) => [c.id, c]));
   const steps = spec.steps.map((s, n) => cleanStep(s, byId.get(kebab(s.card)), edgeKeys, (m) => notes.push(`step ${n + 1}: ${m}`))).filter((s) => s.beats.length);
+  // What the example holds builds up from the intro through the flow; each thing is marked new, changed or the same.
+  let before = new Map<string, string>();
+  for (const s of steps) {
+    if (s.part !== "intro" && s.part !== "flow") continue;
+    s.state = s.state.map((h) => ({ ...h, change: !before.has(h.key) ? "new" : before.get(h.key) === h.value ? "same" : "changed" }));
+    before = new Map(s.state.map((h) => [h.key, h.value]));
+  }
   return {
-    version: 3, flowId, generatedAt: new Date().toISOString(), model, status: "checking",
-    title: spec.title, intro: spec.intro, pitch: spec.pitch, cards, edges, steps, notes,
+    version: 4, flowId, generatedAt: new Date().toISOString(), model, status: "checking",
+    title: spec.title, intro: spec.intro, pitch: spec.pitch, cards, edges, steps,
+    example: spec.example ? pending(spec.example, "behavior") : null, notes,
   };
 }
 
 /**
+ * Whether a value written beside a line belongs there: "name = value" needs the line to mention the name (one
+ * part of a dotted name, inside a longer identifier too: status in setStatus, artifactType as artifact_type) or
+ * the value itself ("selfie.jpg"). An outcome without a name ("→ passes", "transaction open") is taken as written.
+ */
+export function valueFits(text: string, line: string): boolean {
+  const m = /^\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)(?:\[[^\]]*\])?\s*=(?![=>])\s*(.*)$/.exec(text);
+  if (!m) return true;
+  const plain = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const code = plain(line);
+  // A one-letter name only counts as a whole word, or "n" would be found almost anywhere.
+  const named = m[1]!.split(".").some((part) => (plain(part).length > 1 ? code.includes(plain(part)) : new RegExp(`(^|[^\\w$])${part.replace(/\$/g, "\\$")}([^\\w$]|$)`).test(line)));
+  const value = m[2]!.split(/\s*(?:→|->|,)\s*/)[0]!.replace(/^["'`]|["'`]$/g, "").trim();
+  return named || (value.length > 2 && line.includes(value));
+}
+
+/**
  * A tour step made sound: marked lines must be on its card (a point with none just talks), a reveal needs a
- * claim, a fail step needs hops that run along real edges, and a fail or why step needs a card.
+ * claim, a point without one is labeled a guess, a value must sit on a line that names it, a fail step needs
+ * hops that run along real edges, and a fail or why step needs a card.
  */
 function cleanStep(s: BoardSpec["steps"][number], card: BoardCard | undefined, edgeKeys: Set<string>, note: (m: string) => void): BoardStep {
   const onCard = (n: number) => !!card && n >= card.start && n < card.start + card.lines.length;
+  const lineText = (n: number) => card?.lines[n - card.start] ?? "";
   const beats = s.beats.flatMap((b): Beat[] => {
     const text = b.text.trim();
     const lines = b.lines.filter(onCard);
-    const base = { text, tone: b.tone, lines: [] as number[], values: [] as Beat["values"], claim: null };
-    const values = b.values.filter((v) => onCard(v.line) && v.text.trim()).map((v) => ({ line: v.line, text: v.text.trim().slice(0, 48) })).slice(0, 4);
+    const base = { text, tone: b.tone, lines: [] as number[], values: [] as Beat["values"], claim: null, analogy: false };
+    const values = b.values
+      .filter((v) => onCard(v.line) && v.text.trim())
+      .filter((v) => valueFits(v.text, lineText(v.line)) || (note(`a value "${v.text.trim()}" names nothing on line ${v.line}, so it's dropped`), false))
+      .map((v) => ({ line: v.line, text: v.text.trim().slice(0, 48) }))
+      .slice(0, 4);
     if (b.kind === "reveal") {
       if (b.claim) return [{ ...base, kind: "reveal", text: text || b.claim.text, lines, values, claim: pending(b.claim, "behavior") }];
       note("a reveal without a claim is said instead");
     }
     if (!text) return [];
     if (b.kind === "point") {
-      if (lines.length) return [{ ...base, kind: "point", lines, values }];
+      if (lines.length) {
+        // What's said about marked lines is a claim. Without one from the writer it's shown as a guess resting on those lines.
+        const claim = b.claim
+          ? pending(b.claim, "behavior")
+          : pending({ text, label: "inferred", evidence: [{ file: card!.file, start: Math.min(...lines), end: Math.max(...lines), mentions: [] }], commit: "", searched: "" }, "behavior");
+        if (!b.claim) note("a point without a claim is labeled inferred");
+        return [{ ...base, kind: "point", lines, values, claim }];
+      }
       note("a point at lines that aren't on its card is said instead");
     }
     if (b.kind === "ask") return [{ ...base, kind: "ask", tone: "curious" }];
-    return [{ ...base, kind: "say" }];
+    return [{ ...base, kind: "say", analogy: b.analogy }];
   });
+  const state: Held[] = s.part === "intro" || s.part === "flow"
+    ? s.state.filter((h) => h.key.trim() && h.value.trim()).slice(0, 5).map((h) => ({ key: h.key.trim().slice(0, 30), value: h.value.trim().slice(0, 30), change: "new" }))
+    : [];
   const hops = s.hops.filter((h) => edgeKeys.has(h.edge));
   let part = s.part;
   if ((part === "fail" && !hops.length) || ((part === "fail" || part === "why") && !card)) {
     note(`a ${part} step without ${card ? "a path along the board's links" : "a card"} is told as a plain step`);
     part = card ? "flow" : "close";
   }
-  return { part, card: card?.id ?? "", route: part === "flow" ? s.route.filter((r) => edgeKeys.has(r)) : [], hops: part === "fail" ? hops : [], beats };
+  return { part, card: card?.id ?? "", route: part === "flow" ? s.route.filter((r) => edgeKeys.has(r)) : [], hops: part === "fail" ? hops : [], beats, state: part === "intro" || part === "flow" ? state : [] };
 }
 
 type OldBeat = { kind: string; text: string; tone?: BeatTone; lines?: number[]; claim?: AnalysisClaim | null };
 type OldHop = Hop;
-type OldBoard = Omit<Board, "version" | "steps"> & {
+/** A single-tour board from before labeled points and the example's state. */
+type V3Board = Omit<Board, "version" | "steps" | "example"> & {
+  version: 3;
+  steps: (Omit<BoardStep, "state" | "beats"> & { state?: Held[]; beats: (Omit<Beat, "analogy"> & { analogy?: boolean })[] })[];
+  example?: AnalysisClaim | null;
+};
+type OldBoard = Omit<Board, "version" | "steps" | "example"> & {
   version: 1 | 2;
   steps: { card: string; route: string[]; text?: string; beats?: OldBeat[] }[];
   tryIt?: { scenarios: { label: string; hops: OldHop[]; result: AnalysisClaim }[] };
@@ -336,12 +422,22 @@ type OldBoard = Omit<Board, "version" | "steps"> & {
  * Docent answers itself); the failure scenarios become "what goes wrong" steps and the first reviewer
  * questions become "why it's built this way" steps, with their checked claims. Switches are dropped.
  */
-export function upgradeBoard(raw: Board | OldBoard): Board {
-  if (raw.version === 3) return raw;
-  const b = raw as OldBoard;
+export function upgradeBoard(raw: Board | V3Board | OldBoard): Board {
+  if (raw.version === 4) return raw;
+  // A v3 board keeps everything; its points stay unlabeled (nothing to check them against) and it has no state to show.
+  const v3: V3Board = raw.version === 3 ? raw : fromOld(raw);
+  return {
+    ...v3,
+    version: 4,
+    example: v3.example ?? null,
+    steps: v3.steps.map((s) => ({ ...s, state: s.state ?? [], beats: s.beats.map((bt) => ({ ...bt, analogy: bt.analogy ?? false })) })),
+  };
+}
+
+function fromOld(b: OldBoard): V3Board {
   const n = b.steps.length;
-  const steps: BoardStep[] = b.steps.map((s, i) => {
-    const beats: Beat[] = (s.beats ?? [{ kind: "say", text: s.text ?? "" }]).map((bt) => ({
+  const steps: V3Board["steps"] = b.steps.map((s, i) => {
+    const beats: V3Board["steps"][number]["beats"] =(s.beats ?? [{ kind: "say", text: s.text ?? "" }]).map((bt) => ({
       kind: bt.kind === "predict" ? "ask" : (bt.kind as Beat["kind"]),
       text: bt.text,
       tone: bt.kind === "predict" || /\?\s*$/.test(bt.text) ? "curious" : bt.tone ?? "calm",
@@ -361,7 +457,7 @@ export function upgradeBoard(raw: Board | OldBoard): Board {
     const [a, c] = h.edge.split(">");
     return (h.back ? a : c) ?? "";
   };
-  const fails: BoardStep[] = (b.tryIt?.scenarios ?? []).slice(1, 4).filter((sc) => sc.hops.length).map((sc) => ({
+  const fails: V3Board["steps"] =(b.tryIt?.scenarios ?? []).slice(1, 4).filter((sc) => sc.hops.length).map((sc) => ({
     part: "fail", card: cardOf(sc.hops[sc.hops.length - 1]!), route: [], hops: sc.hops,
     beats: [
       // Old scenario labels are button text ("Storage refuses", "PNG front, JPEG back"), so they're set up, not asked.
@@ -369,7 +465,7 @@ export function upgradeBoard(raw: Board | OldBoard): Board {
       { kind: "reveal", text: sc.result.text, tone: "concerned", lines: [], values: [], claim: sc.result },
     ],
   }));
-  const whys: BoardStep[] = (b.defend ?? []).filter((d) => d.card).slice(0, 3).map((d) => ({
+  const whys: V3Board["steps"] =(b.defend ?? []).filter((d) => d.card).slice(0, 3).map((d) => ({
     part: "why", card: d.card, route: [], hops: [],
     beats: [
       { kind: "ask", text: d.q, tone: "curious", lines: [], values: [], claim: null },
@@ -387,6 +483,7 @@ function claimsOf(b: Board): AnalysisClaim[] {
   return [
     ...b.cards.flatMap((c) => [c.why, c.say]),
     ...b.steps.flatMap((s) => s.beats.flatMap((bt) => (bt.claim ? [bt.claim] : []))),
+    ...(b.example ? [b.example] : []),
   ];
 }
 

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import { extract, type Facts } from "@docent/extract";
-import { cleanBoard, upgradeBoard, type Board } from "../src/index.ts";
+import { cleanBoard, flowTests, upgradeBoard, valueFits, type Board } from "../src/index.ts";
 
 let facts: Facts;
 let root: string;
@@ -22,8 +22,8 @@ type Spec = Parameters<typeof cleanBoard>[0];
 type SpecStep = Spec["steps"][number];
 type SpecBeat = SpecStep["beats"][number];
 const claim = (text: string) => ({ text, label: "confirmed" as const, evidence: [], commit: "", searched: "" });
-const beat = (b: Partial<SpecBeat> & Pick<SpecBeat, "kind">): SpecBeat => ({ text: "words", tone: "calm", lines: [], values: [], claim: null, ...b });
-const step = (s: Partial<SpecStep>): SpecStep => ({ part: "flow", card: "up", route: [], hops: [], beats: [beat({ kind: "say" })], ...s });
+const beat = (b: Partial<SpecBeat> & Pick<SpecBeat, "kind">): SpecBeat => ({ text: "words", tone: "calm", lines: [], values: [], claim: null, analogy: false, ...b });
+const step = (s: Partial<SpecStep>): SpecStep => ({ part: "flow", card: "up", route: [], hops: [], beats: [beat({ kind: "say" })], state: [], ...s });
 
 function spec(steps: SpecStep[]): Spec {
   return {
@@ -34,6 +34,7 @@ function spec(steps: SpecStep[]): Spec {
     ],
     edges: [{ from: "page", to: "up", label: "files" }],
     steps,
+    example: null,
   };
 }
 
@@ -41,7 +42,7 @@ describe("board tour", () => {
   it("keeps sound beats and turns unsound ones into plain talk", () => {
     const b = cleanBoard(spec([step({
       beats: [
-        beat({ kind: "point", lines: [2, 99], values: [{ line: 2, text: " size = 3 MB " }, { line: 99, text: "off the card" }] }),
+        beat({ kind: "point", lines: [2, 99], values: [{ line: 3, text: " n = 3 " }, { line: 3, text: "size = 3 MB" }, { line: 99, text: "off the card" }] }),
         beat({ kind: "point", lines: [99] }),
         beat({ kind: "ask", text: "Why?", tone: "calm" }),
         beat({ kind: "reveal", text: "", lines: [3], claim: claim("Because.") }),
@@ -52,10 +53,55 @@ describe("board tour", () => {
     const beats = b.steps[0]!.beats;
     expect(beats.map((x) => x.kind)).toEqual(["point", "say", "ask", "reveal", "say"]);
     expect(beats[0]!.lines).toEqual([2]);
-    expect(beats[0]!.values).toEqual([{ line: 2, text: "size = 3 MB" }]);
+    expect(beats[0]!.values).toEqual([{ line: 3, text: "n = 3" }]);
     expect(beats[2]!.tone).toBe("curious");
     expect(beats[3]).toMatchObject({ text: "Because.", lines: [3] });
-    expect(b.version).toBe(3);
+    expect(b.version).toBe(4);
+  });
+
+  it("labels every point: the writer's claim, or a guess resting on the marked lines", () => {
+    const b = cleanBoard(spec([step({
+      beats: [
+        beat({ kind: "point", text: "It doubles n.", lines: [4], claim: { ...claim("helper doubles n"), evidence: [{ file: "src/lib/upload.ts", start: 3, end: 4, mentions: ["n * 2"] }] } }),
+        beat({ kind: "point", text: "Then it returns.", lines: [4] }),
+        beat({ kind: "say", text: "Like a photocopier.", analogy: true }),
+        beat({ kind: "ask", text: "Why?", analogy: true }),
+      ],
+    })]), facts, root, "f", "m");
+    const [own, guess, picture, ask] = b.steps[0]!.beats;
+    expect(own!.claim).toMatchObject({ text: "helper doubles n", label: "confirmed" });
+    expect(guess!.claim).toMatchObject({ text: "Then it returns.", label: "inferred", evidence: [{ file: "src/lib/upload.ts", start: 4, end: 4 }] });
+    expect(picture).toMatchObject({ kind: "say", analogy: true, claim: null });
+    expect(ask!.analogy).toBe(false);
+  });
+
+  it("builds up the example's state from the intro through the flow, marking what's new or changed", () => {
+    const held = (key: string, value: string) => ({ key, value });
+    const b = cleanBoard(spec([
+      step({ part: "intro", card: "", state: [held("file", "a.jpg")] }),
+      step({ part: "flow", state: [held("file", "a.jpg"), held("status", "sent")] }),
+      step({ part: "flow", state: [held("file", "a.jpg"), held("status", "saved")] }),
+      step({ part: "fail", hops: [{ edge: "page>up", back: false, stat: "500", tone: "bad" }], state: [held("status", "500")] }),
+    ]), facts, root, "f", "m");
+    expect(b.steps.map((s) => s.state.map((h) => `${h.key}:${h.change}`))).toEqual([["file:new"], ["file:same", "status:new"], ["file:same", "status:changed"], []]);
+  });
+
+  it("keeps a value beside a line only when the line names it", () => {
+    expect(valueFits("file.size = 3 MB → passes", "if (file.size > MAX) throw")).toBe(true);
+    expect(valueFits("attempt = 2", "const n = retries + 1;")).toBe(false);
+    expect(valueFits("→ passes", "anything")).toBe(true);
+    expect(valueFits("status 403 → expired", "if (res.status === 403)")).toBe(true);
+    expect(valueFits("a == b", "x")).toBe(true);
+    // Found on a real board: names inside longer identifiers, other spellings, or the value itself on the line.
+    expect(valueFits('status = "starting"', 'setStatus("starting");')).toBe(true);
+    expect(valueFits("artifactType = SELFIE", "artifact_type: type,")).toBe(true);
+    expect(valueFits("file = selfie.jpg, image/jpeg", 'return new File([blob], "selfie.jpg", { type });')).toBe(true);
+    expect(valueFits('error = "upload"', 'setError("upload");')).toBe(true);
+  });
+
+  it("finds the tests that reach the flow's files", () => {
+    expect(flowTests(facts, ["src/lib/upload.ts"])).toEqual(["src/lib/upload.test.ts"]);
+    expect(flowTests(facts, ["src/ui/Page.tsx"])).toEqual([]);
   });
 
   it("keeps a failure only with a path along the board's links, and a why only with a card", () => {
@@ -89,7 +135,9 @@ describe("board tour", () => {
       defend: [{ q: "Why one retry?", card: "up", lines: [3], answer: claim("To bound it."), breaks: "Loops forever." }],
     } as unknown as Board;
     const b = upgradeBoard(old);
-    expect(b.version).toBe(3);
+    expect(b.version).toBe(4);
+    expect(b.example).toBeNull();
+    expect(b.steps.every((s) => s.state.length === 0 && s.beats.every((x) => x.analogy === false))).toBe(true);
     expect(b.steps.map((s) => s.part)).toEqual(["intro", "flow", "fail", "why", "close"]);
     expect(b.steps[1]!.beats.map((x) => [x.kind, x.lines])).toEqual([["ask", []], ["reveal", [81]]]);
     expect(b.steps[2]).toMatchObject({ card: "up", beats: [{ kind: "say", text: "Here's one that goes wrong: Storage refuses." }, { kind: "reveal", text: "It fails." }] });

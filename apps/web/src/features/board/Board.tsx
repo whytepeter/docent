@@ -19,6 +19,32 @@ const PART: Record<Board["steps"][number]["part"], string> = {
   intro: "The big picture", flow: "Following the request", fail: "When it goes wrong", why: "Why it's built this way", close: "Now you can say it",
 };
 
+/**
+ * What the example holds so far, beside the board: it builds up from the intro through the flow (new and changed
+ * things flash), stays as it ended for the close, and steps aside while a failure or a reviewer's question plays.
+ * Folded on a narrow screen until opened.
+ */
+function Holding({ board, at }: { board: Board; at: number }) {
+  const st = board.steps[at];
+  const last = [...board.steps].reverse().find((s) => s.state.length);
+  const held = st?.part === "intro" || st?.part === "flow" ? st.state : st?.part === "close" ? last?.state.map((h) => ({ ...h, change: "same" as const })) ?? [] : [];
+  const [open, setOpen] = useState(() => !matchMedia("(max-width: 700px)").matches);
+  if (!held.length) return null;
+  return (
+    <details className="bd-fl bd-held" open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
+      <summary title="What the example request holds once this step has run: worked out from the example and the code, not from running it">The example so far</summary>
+      <dl key={at}>
+        {held.map((h) => (
+          <div key={h.key} className={h.change}>
+            <dt>{h.key}</dt>
+            <dd>{h.value}</dd>
+          </div>
+        ))}
+      </dl>
+    </details>
+  );
+}
+
 const savedKey = (id: string, b: Board) => `docent:board:${id}:${b.generatedAt}`;
 function loadSaved(id: string, b: Board): Saved {
   try {
@@ -245,7 +271,8 @@ function BoardView({ id, board, job, repoName, onHome, onSettings }: { id: strin
 
   const e = engine.current;
   // A reveal shows what it rests on: its label and lines, under the caption.
-  const said = es?.beat ? board.steps[es.step]?.beats[es.beat.i] : null;
+  const step = es ? board.steps[es.step] : undefined;
+  const said = es?.beat ? step?.beats[es.beat.i] : null;
   const paused = !!e?.isPaused();
   const checking = board.status === "checking" && !!job && !job.finishedAt;
   return (
@@ -265,6 +292,7 @@ function BoardView({ id, board, job, repoName, onHome, onSettings }: { id: strin
         <button onClick={() => void e?.fit()} aria-label="Reset: fit the board (F)" title="Reset: fit the board (F)"><Icon name="fit" size={13} /></button>
       </div>
 
+      {es && <Holding board={board} at={es.step} />}
       {voiceMenu && <div className="bd-voice-menu"><VoiceMenu onChange={() => e?.voiceChanged()} onClose={() => setVoiceMenu(false)} /></div>}
       {chat && es && e && <Chat board={board} es={es} engine={e} onClose={closeChat} ask={why?.q} backToTour={!!why} />}
       {/* The story bar: one place for what's being said, where you are, and what you can do next. */}
@@ -277,7 +305,11 @@ function BoardView({ id, board, job, repoName, onHome, onSettings }: { id: strin
             </div>
             <p ref={capP} />
           </div>
-          {said?.kind === "reveal" && said.claim && <Said claim={said.claim} checking={checking} className="bare" />}
+          {(said?.kind === "reveal" || said?.kind === "point") && said.claim && <Said claim={said.claim} checking={checking} className="bare" />}
+          {said?.kind === "say" && said.analogy && <p className="bd-note" title="A picture to hold on to, not a claim about the code">An analogy</p>}
+          {step?.part === "intro" && !said?.claim && !said?.analogy && (board.example
+            ? <div className="bd-ex"><p className="bd-note">The example comes from the repo's tests</p><Said claim={board.example} checking={checking} className="bare" /></div>
+            : <p className="bd-note">The example is made up for this tour</p>)}
         </div>
         <div className="bd-bar-ctl">
           <button onClick={() => e?.goStep((es?.step ?? 0) - 1)} aria-label="Previous step (←)" title="Previous step (←)"><Icon name="prev" size={16} fill /></button>

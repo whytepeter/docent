@@ -622,6 +622,17 @@ export class BoardEngine {
     this.world.appendChild(p);
     return p;
   }
+  /** A tag riding beside the packet: what travels along the link it's on. */
+  private labelPacket(p: HTMLElement, text: string) {
+    let tag = p.querySelector<HTMLElement>(".bd-pk-l");
+    if (!text) return tag?.remove();
+    if (!tag) {
+      tag = document.createElement("span");
+      tag.className = "bd-pk-l";
+      p.appendChild(tag);
+    }
+    tag.textContent = text;
+  }
   private placePacket(p: HTMLElement, id: string, side: "l" | "r") {
     const a = this.anchor(id, side);
     p.style.transform = `translate(${a.x}px, ${a.y}px)`;
@@ -888,6 +899,8 @@ export class BoardEngine {
         this.placePacket(pk, st.route[0]!.split(">")[0]!, "r");
         seq = (async () => {
           for (const k of st.route) {
+            // The packet says what it carries along each link, so the request reads as data on the move.
+            this.labelPacket(pk, this.board.edges.find((e) => `${e.from}>${e.to}` === k)?.label ?? "");
             await this.travel(pk, k, false, 800, tok);
             if (tok !== this.tok) break;
           }
@@ -1049,6 +1062,7 @@ export class BoardEngine {
       const tag = document.createElement("span");
       tag.className = "bd-val";
       tag.textContent = v.text;
+      tag.title = "What the example holds here: worked out from the example and the code, not from running it";
       row.appendChild(tag);
     }
   }
