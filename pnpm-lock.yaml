@@ -130,6 +130,12 @@ importers:
         specifier: ^4.6.7
         version: 4.6.7
 
+  packages/codedocent-shim:
+    dependencies:
+      docentflow:
+        specifier: workspace:^
+        version: link:../cli
+
   packages/contracts:
     dependencies:
       '@docent/analyze':

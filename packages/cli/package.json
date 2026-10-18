@@ -1,5 +1,5 @@
 {
-  "name": "codedocent",
+  "name": "docentflow",
   "version": "0.2.1",
   "description": "Guided, narrated tours of your codebase, with evidence for every claim. Runs locally on your own Claude Code or Codex.",
   "keywords": [
