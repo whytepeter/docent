@@ -1,7 +1,7 @@
 import { createHighlighter, type BundledTheme, type Highlighter } from "shiki";
 import { editorThemeStore } from "./editor-theme.ts";
 
-const LANGS = ["ts", "tsx", "js", "jsx", "json", "md", "html", "css", "vue", "svelte", "yaml"] as const;
+const LANGS = ["ts", "tsx", "js", "jsx", "json", "md", "html", "css", "vue", "svelte", "yaml", "python", "go", "toml", "ini", "shellscript"] as const;
 let instance: Promise<Highlighter> | null = null;
 
 export const highlighter = () =>
@@ -9,7 +9,7 @@ export const highlighter = () =>
 
 export function langOf(path: string): string {
   const ext = path.split(".").pop() ?? "";
-  const map: Record<string, string> = { mts: "ts", cts: "ts", mjs: "js", cjs: "js", mdx: "md", yml: "yaml" };
+  const map: Record<string, string> = { mts: "ts", cts: "ts", mjs: "js", cjs: "js", mdx: "md", yml: "yaml", py: "python", pyi: "python", cfg: "ini", sh: "shellscript" };
   const lang = map[ext] ?? ext;
   return (LANGS as readonly string[]).includes(lang) ? lang : "text";
 }

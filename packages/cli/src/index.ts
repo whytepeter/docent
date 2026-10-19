@@ -257,7 +257,7 @@ const isDir = (p: string | undefined) => {
 };
 
 /** The current folder, when it looks like a project; otherwise the app asks which codebase to open. */
-const here = () => [".git", "package.json"].some((f) => existsSync(join(process.cwd(), f))) ? process.cwd() : undefined;
+const here = () => [".git", "package.json", "pyproject.toml", "setup.py", "requirements.txt", "go.mod"].some((f) => existsSync(join(process.cwd(), f))) ? process.cwd() : undefined;
 
 // Keys (CARTESIA_API_KEY, ANTHROPIC_API_KEY…) from Docent's own .env, if there is one. Never the analyzed repo's.
 loadDocentEnv();

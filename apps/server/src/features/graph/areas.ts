@@ -6,7 +6,7 @@ import type { Area } from "@docent/contracts";
  */
 const CONTAINERS = new Set([
   "features", "modules", "components", "shared", "app", "pages", "lib", "services", "packages", "apps",
-  "domains", "routes", "views", "stores", "hooks", "utils", "server", "api", "composables",
+  "domains", "routes", "views", "stores", "hooks", "utils", "server", "api", "composables", "cmd", "internal", "pkg",
 ]);
 
 const humanize = (segment: string) => {

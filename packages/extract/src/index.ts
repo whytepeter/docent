@@ -56,7 +56,7 @@ export function extract(repoPath: string, { onStage = () => {} }: ExtractOptions
   for (const e of graph.edges) if (e.kind === "renders" && e.file !== e.to.split("#")[0]) imported.add(e.to.split("#")[0]!);
   const entryFiles = new Set(entries.map((e) => e.file));
   const unreferenced = files
-    .filter((f) => f.kind === "source" && !imported.has(f.path) && !entryFiles.has(f.path) && !f.path.endsWith(".d.ts"))
+    .filter((f) => f.kind === "source" && !imported.has(f.path) && !entryFiles.has(f.path) && !f.path.endsWith(".d.ts") && TS_LANGS.has(f.lang ?? ""))
     .map((f) => ({ file: f.path, reason: "no file imports it and it is not an entry point", confidence: "inferred" as const }));
 
   let head: string | null = null;

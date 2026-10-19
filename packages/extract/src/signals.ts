@@ -1,12 +1,13 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, posix } from "node:path";
+import { pythonGoStackAndEntries } from "./manifests.ts";
 import { git } from "./repo.ts";
 import type { CommitFact, DocFact, DocMention, EntryFact, FileFact, SymbolFact } from "./types.ts";
 
 const MAX_COMMITS = 3000;
 const COCHANGE_MAX_FILES = 40;
 /** Agent state and lockfiles change with everything; they say nothing about how code is coupled. */
-const BOOKKEEPING = /^(\.wolf|\.claude|\.cursor|\.codex|\.agents)\/|(^|\/)(pnpm-lock\.yaml|package-lock\.json|yarn\.lock)$/; // sweeping commits (formatting, renames) say nothing about coupling
+const BOOKKEEPING = /^(\.wolf|\.claude|\.cursor|\.codex|\.agents)\/|(^|\/)(pnpm-lock\.yaml|package-lock\.json|yarn\.lock|poetry\.lock|uv\.lock|Pipfile\.lock|go\.sum)$/; // sweeping commits (formatting, renames) say nothing about coupling
 
 export function readHistory(root: string, known: Set<string>): { commits: CommitFact[]; cochange: Record<string, { file: string; count: number }[]> } {
   let raw = "";
@@ -54,7 +55,7 @@ function removalOf(root: string) {
         const [sha, subject = ""] = git(root, ["log", "-S", name, "-1", "--format=%h%x09%s"]).trim().split("\t");
         if (sha) {
           const esc = name.replace(/[$]/g, "\\$");
-          const declared = new RegExp(`^-(?!--).*\\b(class|function|interface|type|enum|const|let|var)\\s+${esc}\\b`, "m");
+          const declared = new RegExp(`^-(?!--).*\\b(class|function|interface|type|enum|const|let|var|def|func(?:\\s+\\([^)]*\\))?)\\s+${esc}\\b`, "m");
           if (declared.test(git(root, ["show", sha, "--format=", "-U0"]))) found = { sha, subject };
         }
       } catch {
@@ -125,6 +126,10 @@ export function scanSource(root: string, files: FileFact[]) {
       for (const m of line.matchAll(/(?:import\.meta\.env|process\.env)(?:\.([A-Z][A-Z0-9_]*)|\[["']([A-Z][A-Z0-9_]*)["']\])/g)) {
         env.push({ name: (m[1] ?? m[2])!, file: file.path, line: i + 1 });
       }
+      // Python `os.environ["X"]`, `os.environ.get("X")`, `os.getenv("X")`; Go `os.Getenv("X")`, `os.LookupEnv("X")`.
+      for (const m of line.matchAll(/\bos\.(?:environ(?:\.get\(|\[)|getenv\(|Getenv\(|LookupEnv\()\s*["']([A-Z][A-Z0-9_]*)["']/g)) {
+        env.push({ name: m[1]!, file: file.path, line: i + 1 });
+      }
       const marker = /(?:\/\/|\/\*|\*|#|<!--)\s*(TODO|FIXME|HACK|XXX)\b[:\s]*(.*)/.exec(line);
       if (marker) markers.push({ kind: marker[1]!, file: file.path, line: i + 1, text: marker[2]!.trim().slice(0, 160) });
     });
@@ -177,5 +182,8 @@ export function readStackAndEntries(root: string, files: FileFact[]): { stack: s
       }
     }
   }
+  const other = pythonGoStackAndEntries(root, files);
+  for (const s of other.stack) stack.add(s);
+  entries.push(...other.entries);
   return { stack: [...stack].sort(), entries };
 }

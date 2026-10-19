@@ -1,0 +1,13 @@
+[project]
+name = "notes"
+version = "0.1.0"
+dependencies = [
+  "Flask>=3.0",
+  "SQLAlchemy~=2.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+notes = "app.cli:main"
