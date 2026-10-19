@@ -4,6 +4,7 @@ import type { Facts } from "@docent/extract";
 import { redact, z, type LlmProvider } from "@docent/llm";
 import { makeChecker } from "./citations.ts";
 import { discoveryDigest, featureDigest } from "./digest.ts";
+import { errorPathSource, followErrors } from "./error-path.ts";
 import { refuteClaims } from "./refute.ts";
 import type { AnalysisClaim } from "./types.ts";
 
@@ -227,7 +228,7 @@ The code of the flow's files is below the facts, with line numbers: work from it
   - intro (no card): one concrete situation, a real-looking request, and the question the tour answers. If a test below builds such a request, use its values and cite those lines as the example; otherwise make up plausible values and set example to null. Then one everyday analogy for the whole flow, before any code names (a say beat with analogy true; "like posting a parcel: get a label, drop it at the depot, keep the receipt"). End with the 2 or 3 things to watch for on the way ("watch where the key comes from, and who decides the upload worked").
   - flow: one step per card, following that same request (route = the edges it travels to get there). Say why the part exists (the problem it solves) before how it works.
   - recap (no card): one step right after the last flow step. route = every edge of the whole trip in order; in one or two beats, say what the request picked up on the way, as a story, not a list of card names.
-  - fail: 1 to 3 steps on what goes wrong that matters (an expired link, storage refusing, a stall). hops = the path the request takes, with the status each card shows, the last one bad. Say what the user sees and which code decides it.
+  - fail: 1 to 3 steps on what goes wrong that matters (an expired link, storage refusing, a stall). hops = the path the request takes, with the status each card shows, the last one bad. Say what the user sees and which code decides it. When the code throws (or passes an error on) instead of answering on the spot, follow the error past the throw to the code that sends the reply: if "Where a thrown error becomes the response" is given below, put the handler that sends the reply on the board as a card, link the throwing card to it, and after the step at the throw add a fail step on that card whose hops run on to it, pointing at the line that sends the reply, with evidence for each hand-off.
   - why: 1 to 3 steps on the design choices a reviewer would question ("Why retry only on 401/403?"). Ask it, answer it with evidence, and say what would break without it.
   - change: 1 or 2 steps on a change a newcomer is likely to make here ("raise the free plan's quiz limit", "accept PNG too"). card = where you'd make it; point at the line to change; then say what else it touches, with evidence (touches = those cards), and where to look first if it breaks afterwards. Docent shows it; the newcomer isn't asked to do it.
   - close (no card): tie it together in the one sentence they can say out loud, calling back the things the intro said to watch for.
@@ -249,7 +250,7 @@ export async function writeBoard(llm: LlmProvider, facts: Facts, root: string, f
   const prompt = flowPrompt(facts, root, flow);
   const result = await llm.ask({ system: BOARD_SYSTEM, prompt, schema: BoardSchema, tools: llm.canRead ? "read" : "none", cwd: root, effort: "medium", signal });
   // The citation check is mechanical and instant, so it runs before the board is shown; the second reader runs behind it.
-  return citeBoard(cleanBoard(result.data, facts, root, flow.id, result.model), facts, root);
+  return citeBoard(followErrors(cleanBoard(result.data, facts, root, flow.id, result.model), facts, root, flow), facts, root);
 }
 
 const UPDATE_RULES = `
@@ -276,7 +277,7 @@ export async function updateBoard(llm: LlmProvider, facts: Facts, root: string, 
     JSON.stringify(toSpec(old)),
   ].join("\n");
   const result = await llm.ask({ system: BOARD_SYSTEM + UPDATE_RULES, prompt, schema: BoardSchema, tools: llm.canRead ? "read" : "none", cwd: root, effort: "medium", signal });
-  const next = citeBoard(cleanBoard(result.data, facts, root, flow.id, result.model), facts, root);
+  const next = citeBoard(followErrors(cleanBoard(result.data, facts, root, flow.id, result.model), facts, root, flow), facts, root);
   // What was rewritten, and whether anything outside the changed cards moved anyway.
   const said = (s: BoardStep) => s.beats.map((b) => b.text).join(" ");
   const before = new Map(old.steps.map((s, i) => [`${s.part}:${s.card}:${old.steps.slice(0, i).filter((o) => o.part === s.part && o.card === s.card).length}`, said(s)]));
@@ -328,6 +329,8 @@ function flowPrompt(facts: Facts, root: string, flow: Flow): string {
     flowSource(root, flow.files),
     "",
     flowSource(root, flowTests(facts, flow.files), "Tests that exercise the flow (line numbers are real; if one builds a request, it can be the intro's example):", TEST_LINES, TEST_CHARS),
+    "",
+    errorPathSource(facts, root, flow),
   ].join("\n");
 }
 
