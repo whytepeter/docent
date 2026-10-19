@@ -404,7 +404,8 @@
 
 /* The pause-on-questions switch, when on. */
 .bd-fl .bd-bar-ctl button.on-soft { background: var(--accsoft); color: var(--acc); }
-.bd-travels .bd-chip { margin-left: 2px; font: 600 11.5px var(--mono2); padding: 1px 7px; border-radius: 6px; border: 1px solid var(--bline); background: var(--fill); color: var(--bink); cursor: pointer; }
+.bd-travels .bd-chip { display: inline-block; vertical-align: baseline; height: auto; min-width: 0; margin-left: 2px; font: 600 11.5px/18px var(--mono2) !important; padding: 1px 7px; border-radius: 6px; border: 1px solid var(--bline); background: var(--fill); color: var(--bink) !important; cursor: pointer; }
+.bd-travels .bd-chip:hover { border-color: var(--acc); color: var(--acc) !important; }
 
 
 /* Shown only when the code changed since the board was drawn: a labelled pill beside the theme button. */
