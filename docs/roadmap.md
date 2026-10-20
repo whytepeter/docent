@@ -280,7 +280,7 @@ The map-and-inspector screens gave way to one idea: pick a flow of the codebase,
 - **Welcome headline** (Oct 18): "See how a codebase works, drawn from its own code."
 
 ### Open source and npm (Oct 17)
-- **One package, `docentflow` (was `codedocent`, which now ships a shim that forwards here):** `packages/cli/build.mjs` bundles the CLI, the server and Docent's packages into `dist/docent.js` (esbuild), with the built web app beside it in `dist/web`. npm packages stay imports, and the build fails if one isn't listed in the package's dependencies. The tarball is about 2.5 MB; an install is about 60 MB.
+- **One package, `docentflow`:** `packages/cli/build.mjs` bundles the CLI, the server and Docent's packages into `dist/docent.js` (esbuild), with the built web app beside it in `dist/web`. npm packages stay imports, and the build fails if one isn't listed in the package's dependencies. The tarball is about 2.5 MB; an install is about 60 MB.
 - **`docent` alone opens the current folder** when it looks like a project (a `.git` or `package.json`), and the browser lands on that project's page. `--port` picks another port; if 4477 is taken, any free port is used.
 - **Keys live in `~/.docent/.env`** when installed; a checkout keeps using its own `.env`.
 - **The local voice's runtime comes with its weights.** onnxruntime-node (about 290 MB) and phonemizer aren't in the install; downloading Kokoro in Settings installs them into `~/.docent/models/kokoro/runtime` with npm. A checkout uses the workspace's copies.
