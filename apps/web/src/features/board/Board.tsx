@@ -231,7 +231,7 @@ function BoardView({ id, board, job, fresh, onRewrite, repoName, onHome, onSetti
       caption: { title: capT.current, text: capP.current },
       onState: setEs,
       rate: () => live.current.rate,
-      voice: (at, beat) => (live.current.speak ? api.boardVoice(id, at, beat).catch(() => null) : Promise.resolve(null)),
+      voice: (at, beat, signal) => (live.current.speak ? api.boardVoice(id, at, beat, signal).catch(() => null) : Promise.resolve(null)),
       highlight,
       openCode,
       // The story bar covers the bottom; frame the board in the space above it.

@@ -31,7 +31,7 @@ export interface EngineOptions {
   insets: () => Insets;
   rate: () => number;
   /** A voice clip for one beat of a tour step, or null to read without one. */
-  voice: (at: number, beat: number) => Promise<VoiceClip | null>;
+  voice: (at: number, beat: number, signal: AbortSignal) => Promise<VoiceClip | null>;
   /** Highlighted HTML for each line of an excerpt. */
   highlight: (lines: string[], file: string, start: number) => Promise<string[]>;
   openCode: (file: string, start?: number, end?: number) => void;
@@ -118,8 +118,11 @@ export class BoardEngine {
   private flyId = 0;
   private paused = false;
   private audio: HTMLAudioElement | null = null;
-  /** Voice clips by "step:beat", fetched one beat ahead so the teacher doesn't stall between sentences. */
-  private clips = new Map<string, Promise<VoiceClip | null>>();
+  /**
+   * Voice clips by "step:beat", fetched two beats ahead so the teacher doesn't stall between sentences. One
+   * still in flight can be cancelled when the tour moves elsewhere, so a local voice isn't busy with lines nobody hears.
+   */
+  private clips = new Map<string, { clip: Promise<VoiceClip | null>; stop: AbortController; done: boolean }>();
   private skip = false;
   /** The card whose code is typing right now; opening all code leaves it to finish. */
   private typingId: string | null = null;
@@ -183,10 +186,11 @@ export class BoardEngine {
 
   /** A new narrator voice: lines fetched in the old one are dropped, so the next one is spoken in the new voice. */
   voiceChanged() {
-    this.clips.clear();
+    this.dropClips(() => true);
   }
 
   destroy() {
+    this.dropClips(() => true);
     this.tok++;
     this.flyId++;
     this.audio?.pause();
@@ -711,16 +715,35 @@ export class BoardEngine {
 
   // ---------------------------------------------------------------- tour
 
-  /** A beat's voice clip, fetched once; a failed fetch is forgotten so it can be tried again. */
+  /** A beat's voice clip, fetched once; a failed or cancelled fetch is forgotten so it can be tried again. */
   private clip(at: number, beat: number): Promise<VoiceClip | null> {
     const k = `${at}:${beat}`;
-    let p = this.clips.get(k);
-    if (!p) {
-      p = this.o.voice(at, beat).catch(() => null);
-      this.clips.set(k, p);
-      void p.then((c) => c || this.clips.delete(k));
+    let c = this.clips.get(k);
+    if (!c) {
+      const stop = new AbortController();
+      const clip = this.o.voice(at, beat, stop.signal).catch(() => null);
+      const entry = { clip, stop, done: false };
+      c = entry;
+      this.clips.set(k, entry);
+      void clip.then((got) => {
+        entry.done = true;
+        if (!got && this.clips.get(k) === entry) this.clips.delete(k);
+      });
     }
-    return p;
+    return c.clip;
+  }
+  /** Fetches the next two beats' clips, so a slow voice is working on them while this one plays. */
+  private fetchAhead(at: number, beat: number) {
+    let n = this.nextBeat(at, beat);
+    for (let k = 0; k < 2 && n; k++, n = this.nextBeat(...n)) void this.clip(...n);
+  }
+  /** Cancels clips still being made that `drop` picks; ready ones stay cached. */
+  private dropClips(drop: (step: number) => boolean) {
+    for (const [k, c] of this.clips) {
+      if (c.done || !drop(Number(k.split(":")[0]))) continue;
+      c.stop.abort();
+      this.clips.delete(k);
+    }
   }
   /** The beat after this one, across steps. */
   private nextBeat(at: number, beat: number): [number, number] | null {
@@ -732,16 +755,18 @@ export class BoardEngine {
    * The caption, read at the voice's pace when there is a voice: each word appears as it's spoken.
    * Without one it types quickly. Pausing freezes both. True when it was spoken.
    */
-  /** Says one beat: words appear on the voice's clock (or type in without one); onWords hears how many are out. */
-  private async narrate(title: string, text: string, at: { at: number; beat: number } | null, tok: number, onWords: (n: number) => void = () => {}): Promise<boolean> {
+  /**
+   * Says one beat: words appear on the voice's clock (or type in without one); onWords hears how many are out.
+   * onStart runs once the voice is ready, right before the first word, so what the beat lights up never runs
+   * ahead of it. A clip is waited for as long as a local voice may take; only a stuck one is read without it.
+   */
+  private async narrate(title: string, text: string, at: { at: number; beat: number } | null, tok: number, onWords: (n: number) => void = () => {}, onStart: () => void = () => {}): Promise<boolean> {
     const { title: tEl, text: pEl } = this.o.caption;
     tEl.textContent = title;
-    const clip = at === null ? null : await Promise.race([this.clip(at.at, at.beat), new Promise<null>((r) => setTimeout(() => r(null), 4000))]);
+    const clip = at === null ? null : await Promise.race([this.clip(at.at, at.beat), new Promise<null>((r) => setTimeout(() => r(null), 20000))]);
     if (tok !== this.tok) return false;
-    if (at) {
-      const n = this.nextBeat(at.at, at.beat);
-      if (n) void this.clip(...n);
-    }
+    if (at) this.fetchAhead(at.at, at.beat);
+    onStart();
     if (!clip) return (onWords(Infinity), await this.typeText(pEl, text, tok, 14 / this.o.rate()), false);
     const words = text.split(/(\s+)/);
     const total = words.filter((w) => w.trim()).length;
@@ -898,10 +923,14 @@ export class BoardEngine {
     // The caption moves with the step at once, so the last step's words don't linger while the camera travels.
     this.o.caption.title.textContent = title;
     this.o.caption.text.textContent = "";
+    // Clips for steps the tour has left are cancelled, and this step's first lines start being made now,
+    // while the camera travels, rather than once it arrives.
+    const voiced = auto || this.s.playing;
+    this.dropClips((s) => s < i || s > i + 1);
+    if (voiced && st.beats.length) (void this.clip(i, 0), this.fetchAhead(i, 0));
     // A jump shows the board as it is at that step before the camera moves; only the next step draws in.
     if (i !== this.drawnStep + 1) await this.drawUpTo(i, tok);
     if (tok !== this.tok) return;
-    const voiced = auto || this.s.playing;
     // A step that points at lines starts with none lit, and its notes wait until it's told.
     const points = st.beats.some((b) => b.lines.length);
     let opened: Promise<boolean> = Promise.resolve(true);
@@ -939,20 +968,22 @@ export class BoardEngine {
       }
       if (card && beat.lines.length) await this.codeTyped(card, tok);
       if (tok !== this.tok) return;
-      if (beat.lines.length && card) {
-        this.mark(card, beat.lines);
-        this.writeValues(card, beat.values ?? []);
-        void this.leanIn(card, beat.lines);
-      }
-      // Marked as current only as it's said, so its label and lines never show ahead of the words.
-      this.set({ beat: { i: b, kind: beat.kind } });
+      // Its lines, values and label show only as it's said (once the voice is ready), never ahead of the words.
+      const start = () => {
+        if (beat.lines.length && card) {
+          this.mark(card, beat.lines);
+          this.writeValues(card, beat.values ?? []);
+          void this.leanIn(card, beat.lines);
+        }
+        this.set({ beat: { i: b, kind: beat.kind } });
+      };
       // The exact piece of code is underlined when its cue word is spoken (at once without a voice).
       const focus = card ? (beat.focus ?? []).map((f) => ({ ...f, at: cueAt(beat.text, f.cue) })) : [];
       const shown = new Set<number>();
       const reach = (n: number) => focus.forEach((f, k) => {
         if (n >= f.at && !shown.has(k)) (shown.add(k), this.underline(card!, f.line, f.text));
       });
-      const spoken = await this.narrate(title, beat.text, at, tok, reach);
+      const spoken = await this.narrate(title, beat.text, at, tok, reach, start);
       reach(Infinity);
       // After a question, a moment to think before Docent answers it; without a voice, time to read.
       // With "pause on questions" on, the tour waits there until the learner plays on.

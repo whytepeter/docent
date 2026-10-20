@@ -7,6 +7,7 @@ import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import { Worker } from "node:worker_threads";
 import type { Clip, SynthOptions, Tone, VoiceAdapter, VoiceInfo } from "./index.ts";
 import { estimateWords, VoiceError, wav } from "./index.ts";
 
@@ -129,9 +130,12 @@ function resolveRuntime(name: keyof typeof RUNTIME): string | null {
 
 const runtimeReady = () => Object.keys(RUNTIME).every((n) => resolveRuntime(n as keyof typeof RUNTIME));
 
+const missingRuntime = () =>
+  new VoiceError(kokoroSupported() ? "The local voice isn't downloaded yet. Download it in Settings → Narrator." : `The local voice can't run on ${platformLabel()}. Choose a cloud voice in Settings → Narrator.`);
+
 async function importRuntime<T>(name: keyof typeof RUNTIME): Promise<T> {
   const at = resolveRuntime(name);
-  if (!at) throw new VoiceError(kokoroSupported() ? "The local voice isn't downloaded yet. Download it in Settings → Narrator." : `The local voice can't run on ${platformLabel()}. Choose a cloud voice in Settings → Narrator.`);
+  if (!at) throw missingRuntime();
   return (await import(pathToFileURL(at).href)) as T;
 }
 
@@ -210,7 +214,8 @@ export function downloadKokoro(): ModelStatus {
 export function removeKokoro(): ModelStatus {
   download?.abort.abort();
   download = null;
-  session = null;
+  retire();
+  vocab = null;
   styles.clear();
   rmSync(modelDir(), { recursive: true, force: true });
   return kokoroStatus();
@@ -218,23 +223,109 @@ export function removeKokoro(): ModelStatus {
 
 // ---------------------------------------------------------------- speaking
 
-type Ort = typeof import("onnxruntime-node");
-let session: Promise<{ ort: Ort; run: import("onnxruntime-node").InferenceSession; vocab: Map<string, number> }> | null = null;
+let vocab: Map<string, number> | null = null;
 const styles = new Map<string, Float32Array>();
 /** One line at a time: the model already uses every core, and parallel runs only slow each other down. */
 let queue: Promise<unknown> = Promise.resolve();
 
-function load() {
-  session ??= (async () => {
-    const ort = await importRuntime<Ort>("onnxruntime-node");
-    const run = await ort.InferenceSession.create(join(modelDir(), MODEL_FILE), { executionProviders: ["cpu"] });
+function vocabulary(): Map<string, number> {
+  if (!vocab) {
     const tok = JSON.parse(readFileSync(join(modelDir(), "tokenizer.json"), "utf8")) as { model: { vocab: Record<string, number> } };
-    return { ort, run, vocab: new Map(Object.entries(tok.model.vocab)) };
-  })().catch((e) => {
-    session = null;
-    throw e;
+    vocab = new Map(Object.entries(tok.model.vocab));
+  }
+  return vocab;
+}
+
+/**
+ * The model runs in a worker thread. A line takes seconds of CPU, and on the main thread that froze the whole
+ * server: it couldn't send the clip that was already made, or notice a request that was given up on.
+ */
+const WORKER = `
+const { parentPort, workerData } = require("node:worker_threads");
+const { pathToFileURL } = require("node:url");
+const ready = import(pathToFileURL(workerData.ort).href).then(async (m) => {
+  const ort = m.InferenceSession ? m : m.default;
+  return { ort, run: await ort.InferenceSession.create(workerData.model, { executionProviders: ["cpu"] }) };
+});
+let chain = Promise.resolve();
+parentPort.on("message", (job) => (chain = chain.then(() => say(job))));
+async function say({ id, ids, style, speed }) {
+  try {
+    const { ort, run } = await ready;
+    const out = await run.run({
+      input_ids: new ort.Tensor("int64", BigInt64Array.from(ids.map(BigInt)), [1, ids.length]),
+      style: new ort.Tensor("float32", style, [1, 256]),
+      speed: new ort.Tensor("float32", Float32Array.from([speed]), [1]),
+    });
+    parentPort.postMessage({ id, waveform: out.waveform.data, durations: out.durations ? Array.from(out.durations.data, Number) : null });
+  } catch (e) {
+    parentPort.postMessage({ id, error: String((e && e.message) || e) });
+  }
+}`;
+
+type Inference = { waveform: Float32Array; durations: number[] | null };
+let worker: Worker | null = null;
+let jobs = 0;
+const pending = new Map<number, { on: Worker; resolve: (r: Inference) => void; reject: (e: unknown) => void }>();
+
+function model(): Worker {
+  if (worker) return worker;
+  const ort = resolveRuntime("onnxruntime-node");
+  if (!ort) throw missingRuntime();
+  const w = new Worker(WORKER, { eval: true, workerData: { ort, model: join(modelDir(), MODEL_FILE) } });
+  // Only this worker's lines: one stopped for a cancelled line must not fail the next worker's.
+  const failAll = (e: unknown) => {
+    for (const [id, p] of pending) if (p.on === w) (pending.delete(id), p.reject(e));
+  };
+  w.on("message", (m: Inference & { id: number; error?: string }) => {
+    const p = pending.get(m.id);
+    if (!p) return;
+    pending.delete(m.id);
+    if (m.error) p.reject(new VoiceError(`Kokoro couldn't say that line: ${m.error}`));
+    else p.resolve(m);
   });
-  return session;
+  w.on("error", (e) => failAll(new VoiceError(`Kokoro stopped: ${e.message}`)));
+  w.on("exit", () => {
+    if (worker === w) worker = null;
+    failAll(new VoiceError("Kokoro stopped"));
+  });
+  w.unref();
+  return (worker = w);
+}
+
+/** Lets the worker go once it has no line in progress (stopping it mid-run would abort the process). */
+function retire() {
+  const w = worker;
+  worker = null;
+  if (!w) return;
+  const idle = () => ![...pending.values()].some((p) => p.on === w);
+  if (idle()) return void w.terminate();
+  const t = setInterval(() => idle() && (clearInterval(t), void w.terminate()), 250);
+}
+
+/**
+ * One run of the model. Given up on, its result is dropped; the run itself finishes, because stopping the
+ * worker in the middle of one aborts the whole process (onnxruntime throws from native code).
+ */
+function infer(ids: number[], style: Float32Array, speed: number, signal?: AbortSignal): Promise<Inference> {
+  signal?.throwIfAborted();
+  const w = model();
+  const id = jobs++;
+  return new Promise((resolve, reject) => {
+    // The entry stays until the worker answers, so it counts as busy; the answer then goes nowhere.
+    let given = false;
+    const stop = () => {
+      given = true;
+      reject(signal!.reason);
+    };
+    signal?.addEventListener("abort", stop, { once: true });
+    pending.set(id, {
+      on: w,
+      resolve: (r) => (signal?.removeEventListener("abort", stop), given || resolve(r)),
+      reject: (e) => (signal?.removeEventListener("abort", stop), given || reject(e)),
+    });
+    w.postMessage({ id, ids, style, speed });
+  });
 }
 
 function style(voice: string): Float32Array {
@@ -327,9 +418,11 @@ export class KokoroAdapter implements VoiceAdapter {
   }
 
   private async run(text: string, { voice, speed = 1, tone, signal }: SynthOptions): Promise<Clip> {
+    // A line cancelled while it waited in the queue (the tour moved on) is skipped, so the next one starts sooner.
+    signal?.throwIfAborted();
     if (!VOICES[voice]) throw new VoiceError(`Kokoro has no voice "${voice}"`);
     if (!kokoroReady()) throw new VoiceError("Download the Kokoro voice in Settings first");
-    const { ort, run, vocab } = await load();
+    const vocab = vocabulary();
     const pace = Math.max(0.6, Math.min(1.5, speed * (tone ? KOKORO_PACE[tone] : 1)));
     const { words: textWords, pieces } = await phonemePieces(text, voice.startsWith("b"));
     const voiceStyle = style(voice);
@@ -340,13 +433,8 @@ export class KokoroAdapter implements VoiceAdapter {
     for (const chunk of tokenize(pieces, vocab)) {
       signal?.throwIfAborted();
       const n = Math.min(chunk.ids.length, MAX_TOKENS - 1);
-      const out = await run.run({
-        input_ids: new ort.Tensor("int64", BigInt64Array.from([0, ...chunk.ids, 0].map(BigInt)), [1, chunk.ids.length + 2]),
-        style: new ort.Tensor("float32", voiceStyle.slice(n * 256, n * 256 + 256), [1, 256]),
-        speed: new ort.Tensor("float32", Float32Array.from([pace]), [1]),
-      });
-      const waveform = out.waveform!.data as Float32Array;
-      const durations = out.durations?.data as Float32Array | BigInt64Array | undefined;
+      const out = await infer([0, ...chunk.ids, 0], voiceStyle.slice(n * 256, n * 256 + 256), pace, signal);
+      const { waveform, durations } = out;
       audio.push(waveform);
       const seconds = waveform.length / SAMPLE_RATE;
       if (durations?.length === chunk.ids.length + 2) {
