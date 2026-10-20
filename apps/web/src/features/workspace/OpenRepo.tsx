@@ -104,7 +104,7 @@ export function OpenRepo({ workspace, onSettings }: { workspace: Workspace; onSe
   const dragging = useDragging();
 
   useEffect(() => {
-    document.title = "Docent";
+    document.title = "docent";
   }, []);
 
   const reset = () => {

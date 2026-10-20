@@ -264,7 +264,7 @@ The map-and-inspector screens gave way to one idea: pick a flow of the codebase,
 - **Settings' close button** stays put while the settings scroll.
 - **Facts follow the code.** Docent reads the repo again on start when it changed since its facts were taken, and before any drawing or update. A file deleted since no longer breaks the citation check.
 
-**Naming (Oct 18, user decision):** a flow's whiteboard is a **board**; the tour is what you take through it.
+**Naming (Oct 18, user decision):** a flow's whiteboard is a **board**; the tour is what you take through it. The page title is lowercase too: "kyc-site-main · docent".
 
 **Backlog:** none open. The drawing screen has its own stop button, and chat answers are kept on disk per board (see "Faster" above).
 

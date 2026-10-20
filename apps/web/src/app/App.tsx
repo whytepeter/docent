@@ -72,7 +72,7 @@ export function App() {
     };
   }, [shownRoot]);
   useEffect(() => {
-    if (showing) document.title = `${showing.name} · Docent`;
+    if (showing) document.title = `${showing.name} · docent`;
   }, [showing]);
 
   if (workspace.error) return <ServerDown message={workspace.error.message} />;
