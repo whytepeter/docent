@@ -2,8 +2,11 @@
   "name": "@docent/extract",
   "private": true,
   "type": "module",
-  "exports": { ".": "./src/index.ts" },
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "dependencies": {
-    "ts-morph": "^28.0.0"
+    "ts-morph": "^28.0.0",
+    "web-tree-sitter": "0.25.10"
   }
 }

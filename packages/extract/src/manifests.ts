@@ -120,6 +120,9 @@ function pythonEntries(path: string, lines: string[], entries: EntryFact[], stac
   if (name === "manage.py") entries.push({ kind: "main", file: path, detail: "Django management commands", confidence: "confirmed" });
   if (/^(wsgi|asgi)\.py$/.test(name)) entries.push({ kind: "server", file: path, detail: `${name.slice(0, 4).toUpperCase()} application`, confidence: "confirmed" });
   lines.forEach((line, i) => {
+    // The module that builds the web app: what `flask run` (FLASK_APP) or `uvicorn module:app` loads.
+    const app = /^(\w+)\s*(?::\s*\w+\s*)?=\s*(create_app|make_app|Flask|FastAPI|Starlette|Quart|Sanic)\(/.exec(line);
+    if (app) entries.push({ kind: "server", file: path, detail: `${app[1]} = ${app[2]}(…) (line ${i + 1})`, confidence: "confirmed" });
     if (/^if\s+__name__\s*==\s*["']__main__["']\s*:/.test(line)) entries.push({ kind: "main", file: path, detail: `if __name__ == "__main__" (line ${i + 1})`, confidence: "confirmed" });
     // Flask `@app.route("/x", methods=[...])`, `@bp.get("/x")`; FastAPI `@router.post("/x")`.
     const deco = /^\s*@(\w+(?:\.\w+)*)\.(route|get|post|put|patch|delete|websocket|api_route)\(\s*(?:path\s*=\s*)?["']([^"']*)["']([^)]*)/.exec(line);

@@ -127,13 +127,13 @@ export class BoardService {
    * cards whose code changed (and what depends on them), keeping the rest word for word; it falls back to drawing
    * the board again when there's nothing to update from. The board already on disk stays until the new one is saved.
    */
-  writeBoard(id: string, mode: "draw" | "update" = "draw"): Job {
+  async writeBoard(id: string, mode: "draw" | "update" = "draw"): Promise<Job> {
     const running = this.jobs.get(id);
     if (running && !running.finishedAt) return running;
     const flow = loadFlows(this.root)?.flows.find((f) => f.id === id);
     if (!flow) throw new Error("No such flow");
     // The facts (call graph, tests, symbols) must describe the code as it is now.
-    if (this.repo.isStale()) this.repo.reextract();
+    if (this.repo.isStale()) await this.repo.reextract();
     const old = mode === "update" ? loadBoard(this.root, id) : null;
     const changed = old ? freshness(old, this.repo.facts, this.root).cards.filter((c) => c.state === "changed").map((c) => c.id) : [];
     const updating = !!old && changed.length > 0;

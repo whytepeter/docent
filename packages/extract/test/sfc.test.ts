@@ -9,10 +9,10 @@ describe("Vue and Svelte components", () => {
   let facts: Facts;
   const edge = (from: string, to: string, kind = "calls") => facts.edges.find((e) => e.from === from && e.to === to && e.kind === kind);
 
-  beforeAll(() => {
+  beforeAll(async () => {
     const root = mkdtempSync(join(tmpdir(), "docent-sfc-"));
     cpSync(join(import.meta.dirname, "fixture-sfc"), root, { recursive: true });
-    facts = extract(root);
+    facts = await extract(root);
   });
 
   it("keeps script lines where they are in the file", () => {

@@ -11,7 +11,7 @@ const FAKE_KEY = ["sk", "live", "ABCDEFGHIJKLMNOPQRSTUVWX"].join("_");
 
 let root: string;
 let facts: Facts;
-beforeAll(() => {
+beforeAll(async () => {
   root = mkdtempSync(join(tmpdir(), "docent-analyze-"));
   cpSync(join(import.meta.dirname, "../../extract/test/fixture"), root, { recursive: true });
   // A hardcoded key, as agent-written code sometimes has. Assembled here so no key-shaped string sits in this file.
@@ -20,7 +20,7 @@ beforeAll(() => {
   git("init", "-q", "-b", "main");
   git("add", ".");
   git("commit", "-qm", "Add upload pipeline");
-  facts = extract(root);
+  facts = await extract(root);
 });
 
 describe("discovery clean-up", () => {

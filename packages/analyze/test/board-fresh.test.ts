@@ -7,10 +7,10 @@ import { citeBoard, cleanBoard, freshness, refreshBoard } from "../src/index.ts"
 
 let facts: Facts;
 let root: string;
-beforeEach(() => {
+beforeEach(async () => {
   root = mkdtempSync(join(tmpdir(), "docent-fresh-"));
   cpSync(join(import.meta.dirname, "../../extract/test/fixture"), root, { recursive: true });
-  facts = extract(root);
+  facts = await extract(root);
 });
 
 type Spec = Parameters<typeof cleanBoard>[0];

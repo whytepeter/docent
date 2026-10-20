@@ -9,14 +9,14 @@ import { answerQuestion } from "../src/index.ts";
 
 let root: string;
 let facts: Facts;
-beforeAll(() => {
+beforeAll(async () => {
   root = mkdtempSync(join(tmpdir(), "docent-ask-"));
   cpSync(join(import.meta.dirname, "../../extract/test/fixture"), root, { recursive: true });
   const git = (...a: string[]) => execFileSync("git", ["-C", root, "-c", "user.email=t@t", "-c", "user.name=t", ...a]);
   git("init", "-q", "-b", "main");
   git("add", ".");
   git("commit", "-qm", "Add upload pipeline");
-  facts = extract(root);
+  facts = await extract(root);
 });
 
 /** A stand-in for Claude: the first call answers, the second (the second reader) gives verdicts. */

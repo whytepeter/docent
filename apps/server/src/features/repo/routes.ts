@@ -10,8 +10,8 @@ export function repoRoutes(repo: RepoService): Hono {
       stale: repo.isStale(),
       extracting: repo.extracting,
     }))
-    .post("/reextract", (c) => {
-      repo.reextract();
+    .post("/reextract", async (c) => {
+      await repo.reextract();
       return c.json<Status>({ factsHead: repo.facts.repo.head, head: repo.head(), stale: false, extracting: false });
     });
 }

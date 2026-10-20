@@ -38,7 +38,7 @@ export class Workspace {
    * Opens a folder: reads it (or loads its cached facts) and points every route at it.
    * Where it came from is remembered with it: a GitHub checkout says so itself, a zip is told by the import.
    */
-  open(path: string, source?: RepoSource): WorkspaceState {
+  async open(path: string, source?: RepoSource): Promise<WorkspaceState> {
     const root = resolve(path.trim().replace(/^~(?=$|\/)/, homedir()));
     // A .zip on disk (picked in the dialog or pasted) opens the way a dropped one does.
     if (/\.zip$/i.test(root) && isFile(root)) {
@@ -46,7 +46,7 @@ export class Workspace {
       return this.importZip(readFileSync(root), basename(root));
     }
     if (!isDir(root)) throw new Error(`Not a folder: ${root}`);
-    const repo = RepoService.open(root, this.log);
+    const repo = await RepoService.open(root, this.log);
     this.repo = repo;
     this.app = this.build(repo);
     this.source = source ?? checkoutSource(root) ?? readRecent().find((r) => r.root === root)?.source ?? { kind: "folder" };
@@ -55,7 +55,7 @@ export class Workspace {
   }
 
   /** Unpacks a zip into ~/.docent/imports/<name> (replacing an earlier import of the same name) and opens it. */
-  importZip(buf: Buffer, fileName: string): WorkspaceState {
+  importZip(buf: Buffer, fileName: string): Promise<WorkspaceState> {
     const name = fileName.replace(/^.*[\\/]/, "").replace(/\.zip$/i, "").replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^[-.]+/, "").slice(0, 80) || "project";
     mkdirSync(IMPORTS, { recursive: true });
     const tmp = join(IMPORTS, `.partial-${randomUUID()}`);

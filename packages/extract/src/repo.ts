@@ -33,7 +33,7 @@ export function isGitRepo(root: string): boolean {
 
 export const isTestPath = (path: string) =>
   /(^|\/)(__tests__|tests?)\//.test(path) || /\.(test|spec)\.[cm]?[jt]sx?$/.test(path) ||
-  /(^|\/)(test_[^/]*|[^/]*_test|conftest)\.py$/.test(path) || /_test\.go$/.test(path);
+  /(^|\/)(test_[^/]*|[^/]*_test|conftest|tests?)\.py$/.test(path) || /_test\.go$/.test(path);
 
 export function classify(path: string, head: string): FileKind {
   const name = basename(path);

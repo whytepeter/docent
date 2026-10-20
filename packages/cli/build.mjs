@@ -44,6 +44,8 @@ const missing = [...imported].filter((name) => !LATER.has(name) && !pkg.dependen
 if (missing.length) throw new Error(`Add to packages/cli/package.json dependencies: ${missing.join(", ")}`);
 
 cpSync(web, join(here, "dist/web"), { recursive: true });
+// Tree-sitter grammars for Python and Go, found next to docent.js (see packages/extract/src/trees.ts).
+cpSync(join(here, "../extract/grammars"), join(here, "dist/grammars"), { recursive: true });
 // npm shows the package's own README; the repo's is the one to keep up to date.
 for (const file of ["README.md", "LICENSE"]) cpSync(join(here, "../..", file), join(here, file));
 console.log(`built dist/docent.js and dist/web (imports ${[...imported].sort().join(", ")})`);

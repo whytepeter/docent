@@ -11,7 +11,7 @@ export function workspaceRoutes(ws: Workspace): Hono {
     .post("/workspace/open", async (c) => {
       const { path } = (await c.req.json().catch(() => ({}))) as { path?: string };
       if (!path?.trim()) return c.json({ error: "Choose a folder first" }, 400);
-      return c.json<WorkspaceState>(ws.open(path));
+      return c.json<WorkspaceState>(await ws.open(path));
     })
     .post("/workspace/find", async (c) => {
       const { name, children } = (await c.req.json().catch(() => ({}))) as { name?: string; children?: string[] };
@@ -43,6 +43,6 @@ export function workspaceRoutes(ws: Workspace): Hono {
       if (Number(c.req.header("content-length") ?? 0) > MAX_ZIP_BYTES) return c.json({ error: `That zip is over ${MAX_ZIP_BYTES / 1024 / 1024} MB, the most Docent opens.` }, 413);
       const buf = Buffer.from(await c.req.arrayBuffer());
       if (buf.length > MAX_ZIP_BYTES) return c.json({ error: `That zip is over ${MAX_ZIP_BYTES / 1024 / 1024} MB, the most Docent opens.` }, 413);
-      return c.json<WorkspaceState>(ws.importZip(buf, name));
+      return c.json<WorkspaceState>(await ws.importZip(buf, name));
     });
 }

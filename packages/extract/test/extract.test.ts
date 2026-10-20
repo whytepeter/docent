@@ -12,7 +12,7 @@ describe("extract on a small fixture", () => {
   let facts: Facts;
   const fn = (name: string) => connections(facts, findSymbols(facts, name)[0]!);
 
-  beforeAll(() => {
+  beforeAll(async () => {
     root = mkdtempSync(join(tmpdir(), "docent-fixture-"));
     cpSync(join(import.meta.dirname, "fixture"), root, { recursive: true });
     // Committed build output, as some repos have: it must never reach the facts.
@@ -30,7 +30,7 @@ describe("extract on a small fixture", () => {
     writeFileSync(join(root, "NOTES.md"), "Failures throw `LegacyUploadError`. The preview sets `innerHTML` directly.\n");
     git(root, "-c", "user.email=t@t", "-c", "user.name=t", "add", ".");
     git(root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "Drop the legacy error");
-    facts = extract(root);
+    facts = await extract(root);
   });
 
   it("flags a doc naming code that was removed, with the commit that removed it, and ignores names the code never declared", () => {
@@ -92,13 +92,13 @@ describe("extract on a small fixture", () => {
 });
 
 describe("extract on a folder without git", () => {
-  it("lists files (respecting .gitignore), builds the graph, and says plainly there is no history", () => {
+  it("lists files (respecting .gitignore), builds the graph, and says plainly there is no history", async () => {
     const root = mkdtempSync(join(tmpdir(), "docent-nogit-"));
     cpSync(join(import.meta.dirname, "fixture"), root, { recursive: true });
     mkdirSync(join(root, "ignored"), { recursive: true });
     writeFileSync(join(root, "ignored/skip.ts"), "export const skipped = 1;\n");
     writeFileSync(join(root, ".gitignore"), "ignored/\n");
-    const facts = extract(root);
+    const facts = await extract(root);
     expect(existsSync(join(root, ".git"))).toBe(false);
     expect(facts.files.some((f) => f.path === "src/lib/upload.ts")).toBe(true);
     expect(facts.files.some((f) => f.path.startsWith("ignored/"))).toBe(false);

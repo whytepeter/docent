@@ -68,7 +68,7 @@ docent stats <repo>        summarize the saved facts
 
 ## Languages
 
-Docent works best on TypeScript and JavaScript projects: React, Next.js, Node, NestJS, and Vue, Nuxt and Svelte components, whose scripts and templates are in the call graph too. Angular works, but its dependency injection and templates aren't followed yet. Python and Go are read without a call graph, so boards on them lean more on reading the code. Other languages, such as Java, Ruby, PHP and Rust, aren't read yet.
+Docent works on TypeScript and JavaScript (React, Next.js, Node, NestJS, Vue, Nuxt, Svelte), Python (Flask, FastAPI, Django) and Go (net/http, Gin, Echo, chi). Angular works, but its dependency injection and templates aren't followed yet. Other languages, such as Java, Ruby, PHP and Rust, aren't read yet.
 
 ## Develop
 

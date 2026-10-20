@@ -23,7 +23,7 @@ export class RepoService {
     this.fingerprint = fingerprint;
   }
 
-  static open(repo: string, log: (line: string) => void = () => {}): RepoService {
+  static async open(repo: string, log: (line: string) => void = () => {}): Promise<RepoService> {
     const root = resolve(repo);
     const cached = loadCachedFacts(root);
     const meta = readMeta(root);
@@ -31,7 +31,7 @@ export class RepoService {
     // Cached facts are used only while the code is as they describe it; otherwise the repo is read again.
     if (cached && meta && meta.fingerprint === fingerprint) return new RepoService(root, cached, meta.fingerprint);
     if (cached) log("The code changed since it was last read; reading it again");
-    const facts = extract(root, { onStage: (stage) => log(stage) });
+    const facts = await extract(root, { onStage: (stage) => log(stage) });
     saveFacts(root, facts);
     writeMeta(root, fingerprint);
     return new RepoService(root, facts, fingerprint);
@@ -50,11 +50,11 @@ export class RepoService {
     }
   }
 
-  reextract(): void {
+  async reextract(): Promise<void> {
     this.extracting = true;
     try {
       const fingerprint = currentFingerprint(this.root);
-      this.facts = extract(this.root);
+      this.facts = await extract(this.root);
       saveFacts(this.root, this.facts);
       writeMeta(this.root, fingerprint);
       this.fingerprint = fingerprint;

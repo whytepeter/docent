@@ -68,7 +68,7 @@ const FILES: Record<string, string> = {
 let facts: Facts;
 let root: string;
 const flow: Flow = { id: "login", title: "Log in", summary: "s", entry: "src/routes.js", files: ["src/routes.js", "src/controller.js", "src/service.js"] };
-beforeAll(() => {
+beforeAll(async () => {
   root = mkdtempSync(join(tmpdir(), "docent-errors-"));
   for (const [p, text] of Object.entries(FILES)) {
     mkdirSync(dirname(join(root, p)), { recursive: true });
@@ -78,7 +78,7 @@ beforeAll(() => {
   git("init", "-q", "-b", "main");
   git("add", ".");
   git("commit", "-qm", "App");
-  facts = extract(root);
+  facts = await extract(root);
 });
 
 type Spec = Parameters<typeof cleanBoard>[0];

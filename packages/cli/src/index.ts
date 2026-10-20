@@ -43,15 +43,15 @@ function cacheFile(repo: string): string {
   return join(dir, "facts.json");
 }
 
-function load(repo: string): Facts {
+async function load(repo: string): Promise<Facts> {
   const file = cacheFile(repo);
   if (!existsSync(file)) return run(repo);
   return JSON.parse(readFileSync(file, "utf8")) as Facts;
 }
 
-function run(repo: string): Facts {
+async function run(repo: string): Promise<Facts> {
   const started = Date.now();
-  const facts = extract(repo, { onStage: (s) => process.stderr.write(dim(`  ${s}…\n`)) });
+  const facts = await extract(repo, { onStage: (s) => process.stderr.write(dim(`  ${s}…\n`)) });
   const file = cacheFile(repo);
   writeFileSync(file, JSON.stringify(facts));
   printStats(facts);
@@ -140,7 +140,7 @@ async function doctor() {
 async function discover(repo: string) {
   const { discoverFeatures, saveFeatureMap } = await import("@docent/analyze");
   const { pickProvider } = await import("@docent/llm");
-  const facts = load(repo);
+  const facts = await load(repo);
   const llm = pickProvider();
   console.log(dim(`  ${llm.describe()}`));
   process.stderr.write(dim("  reading the facts and proposing features (a minute or two)…\n"));
@@ -172,7 +172,7 @@ async function episode(repo: string, id: string) {
   const llm = pickProvider();
   console.log(dim(`  ${llm.describe()} · writing the episode for ${feature.name}`));
   const started = Date.now();
-  const e = await writeEpisode(llm, load(repo), root, feature, analysis);
+  const e = await writeEpisode(llm, await load(repo), root, feature, analysis);
   saveEpisode(root, e);
   const claims = [...e.scenes.flatMap((s) => s.steps.flatMap((st) => [st.claim, ...(st.predict ? [st.predict.reveal] : [])])), ...e.selfCheck.map((q) => q.answer)];
   const steps = e.scenes.reduce((n, s) => n + s.steps.length, 0);
@@ -207,7 +207,7 @@ async function verify(repo: string, only?: string) {
   const root = resolve(repo);
   const map = loadFeatureMap(root);
   if (!map) throw new Error("No feature map yet. Run: docent discover <repo>");
-  const facts = load(repo);
+  const facts = await load(repo);
   if (only && !map.features.some((f) => f.id === only)) throw new Error(`No feature ${only}`);
   // Without an id, skip features already verified against this code and through the second reader.
   const done = (f: (typeof map.features)[number]) => {
@@ -289,9 +289,9 @@ try {
   } else if (cmd === "verify" && repo) await verify(repo, name);
   else if (cmd === "episode" && repo && name) await episode(repo, name);
   else if (cmd === "voice" && repo && name) await voice(repo, name);
-  else if (cmd === "extract" && repo) run(repo);
-  else if (cmd === "stats" && repo) printStats(load(repo));
-  else if (cmd === "fn" && repo && name) printFn(load(repo), name);
+  else if (cmd === "extract" && repo) await run(repo);
+  else if (cmd === "stats" && repo) printStats(await load(repo));
+  else if (cmd === "fn" && repo && name) printFn(await load(repo), name);
   else console.log(USAGE);
 } catch (error) {
   console.error(`docent: ${(error as Error).message}`);

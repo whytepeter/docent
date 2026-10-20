@@ -8,14 +8,14 @@ import { cleanBoard, flowTests, upgradeBoard, valueFits, type Board } from "../s
 
 let facts: Facts;
 let root: string;
-beforeAll(() => {
+beforeAll(async () => {
   root = mkdtempSync(join(tmpdir(), "docent-board-"));
   cpSync(join(import.meta.dirname, "../../extract/test/fixture"), root, { recursive: true });
   const git = (...a: string[]) => execFileSync("git", ["-C", root, "-c", "user.email=t@t", "-c", "user.name=t", ...a]);
   git("init", "-q", "-b", "main");
   git("add", ".");
   git("commit", "-qm", "Add upload pipeline");
-  facts = extract(root);
+  facts = await extract(root);
 });
 
 type Spec = Parameters<typeof cleanBoard>[0];
