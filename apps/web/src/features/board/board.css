@@ -45,7 +45,7 @@
 .bd-card.good { border-color: var(--ok); }
 .bd-head { min-height: 116px; padding: 18px 20px; display: grid; grid-template-columns: auto 1fr auto; gap: 2px 14px; align-items: center; cursor: pointer; position: relative; }
 .bd-head:focus-visible { outline: 2px solid var(--acc); outline-offset: -2px; border-radius: 20px; }
-.bd-num { width: 42px; height: 42px; border-radius: 14px; background: var(--accsoft); color: var(--acc); display: grid; place-items: center; font: 700 20px var(--head); }
+.bd-num { width: max-content; padding: 0; flex-shrink: 0; height: 42px; border-radius: 14px; background: var(--accsoft); color: var(--acc); display: grid; place-items: center; font: 700 20px var(--head); }
 .bd-tt { min-width: 0; }
 .bd-tt b { font: 700 22px/1.1 var(--head); display: block; }
 .bd-tt span { font: 500 12px var(--mono2); color: var(--mut); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -115,6 +115,8 @@
 .bd-fl button:disabled { opacity: .45; cursor: default; }
 .bd-fl button.on { background: var(--acc); color: var(--acc-ink); }
 .bd-fl button:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
+/* Evidence chips in the tray stay chips, not tray buttons. */
+.bd-fl .bd-chip { display: inline-flex; min-width: 0; height: auto; padding: 1px 7px; border-radius: 6px; font: 600 11.5px/18px var(--mono2) !important; }
 .bd-fl svg { flex: none; }
 .bd-brand { left: 14px; top: 14px; padding: 5px 14px 5px 5px; gap: 10px; max-width: calc(100vw - 28px); }
 .bd-brand-t { display: flex; flex-direction: column; min-width: 0; line-height: 1.15; }
@@ -396,7 +398,7 @@
 ::highlight(bd-focus) { background-color: color-mix(in srgb, var(--acc) 45%, transparent); text-decoration: underline 2px; text-decoration-color: var(--acc); }
 
 /* At a decision, the other way through: fainter, under the example's value. */
-.bd-val-o { position: absolute; right: 10px; top: calc(50% + 15px); z-index: 1; max-width: 60%; overflow: hidden; text-overflow: ellipsis; padding: 0 8px; border-radius: 7px; border: 1.5px dashed color-mix(in srgb, var(--st-y) 70%, transparent); color: color-mix(in srgb, var(--st-y) 85%, var(--code-mut)); font: 600 13px/18px var(--hand); white-space: nowrap; transform: translateX(var(--sx, 0px)) rotate(-1.2deg); animation: bd-val-o-in .35s .25s var(--ease-out) both; }
+.bd-val-o { position: absolute; right: 10px; top: calc(50% + 15px); z-index: 1; background: color-mix(in srgb, var(--st-y) 14%, var(--code)); box-shadow: 0 0 0 3px var(--code); max-width: 60%; overflow: hidden; text-overflow: ellipsis; padding: 0 8px; border-radius: 7px; border: 1.5px dashed color-mix(in srgb, var(--st-y) 75%, var(--code-ink)); color: color-mix(in srgb, var(--code-ink) 80%, var(--st-y)); font: 600 13px/18px var(--hand); white-space: nowrap; transform: translateX(var(--sx, 0px)) rotate(-1.2deg); animation: bd-val-o-in .35s .25s var(--ease-out) both; }
 @keyframes bd-val-o-in { from { opacity: 0; } }
 
 /* A change: the other cards it touches are outlined while it's told. */
