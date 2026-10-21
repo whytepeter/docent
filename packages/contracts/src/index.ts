@@ -363,6 +363,8 @@ export interface Status {
   /** True when code changed since the facts were read (new commit or edited files). */
   stale: boolean;
   extracting: boolean;
+  /** Moves on each time the facts are read again (the folder is watched while open), so screens re-check their boards. */
+  version: number;
 }
 
 export interface SourceSlice {

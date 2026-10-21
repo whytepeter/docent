@@ -292,7 +292,12 @@ The map-and-inspector screens gave way to one idea: pick a flow of the codebase,
 - *Dropped:* per-function exercises and break-it drills. Docent guides; it doesn't set homework (Oct 17 decision).
 
 ### M7: Freshness
-- Hash-based stage caching, incremental re-runs, a file watcher marking stale views.
+- **Live "Code changed" ✅ (Oct 21):** the server watches the open folder (installed packages, build output, agent state and git's internals other than HEAD and refs are ignored). Once edits settle (1 s) and the fingerprint really changed, it reads the code again in the background and bumps a code version in `/api/status`; the board and home screens poll it every 3 s while visible and check their boards again. Checked on a copy of the Express test app: editing a line a card shows brought up the pill in 3 s, and undoing the edit cleared it in 2.5 s, mid-tour, with no reload.
+- **Faster re-reads ✅ (Oct 21):**
+  - Line numbers come from TypeScript's cached line table. ts-morph's getters counted newlines from the top of the file on every call, which was 77% of the time: the call graph on a 779-file app went from 40 s to 11 s, with identical facts.
+  - Which commit removed a name a doc still mentions (`git log -S`, once per name) is kept per HEAD in `removals.json`, so it's redone only after a new commit: 8 s to 0.5 s on two test apps.
+  - Whole re-read: 49 s to 12 s on the 779-file app, 13 s to 4 s on the 268-file one, a fraction of a second on small repos.
+- Still to do: per-file incremental call graphs (re-walk only the changed files and the files that import them). What's left of the 11 s is real type-checking.
 
 ### M8: More languages and monorepos
 Today the call graph covers TypeScript, JavaScript, Vue and Svelte components, Python and Go. Other files are read as text only, so boards on them lean more on reading the code.

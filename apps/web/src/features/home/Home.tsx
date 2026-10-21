@@ -4,6 +4,7 @@ import { api } from "../../shared/api/client.ts";
 import { Icon, Logo, ThemeButton } from "../../shared/ui/index.ts";
 import { loadProgress, Said, type Progress } from "../board/index.ts";
 import { timeLeft, useNow, useProgress } from "../jobs/index.ts";
+import { useCodeVersion } from "../../shared/state/code.ts";
 import "../board/board.css";
 import "./home.css";
 
@@ -21,6 +22,8 @@ export function Home({ repoName, switcher, onOpen, onBack, onSettings }: { repoN
   const [state, setState] = useState<FlowsState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tries, setTries] = useState(0);
+  // Re-checked when the server has read the code again, so a board whose code changed is tagged without a reload.
+  const codeVersion = useCodeVersion();
   useEffect(() => {
     let live = true;
     let t: ReturnType<typeof setTimeout> | undefined;
@@ -45,7 +48,7 @@ export function Home({ repoName, switcher, onOpen, onBack, onSettings }: { repoN
       live = false;
       clearTimeout(t);
     };
-  }, [tries]);
+  }, [tries, codeVersion]);
   const retry = (start: () => Promise<Job>) => void start().then(() => setTries((n) => n + 1), (e: Error) => setError(e.message));
 
   const job = running(state?.job) ? state.job : null;

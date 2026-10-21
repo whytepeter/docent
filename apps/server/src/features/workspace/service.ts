@@ -47,6 +47,8 @@ export class Workspace {
     }
     if (!isDir(root)) throw new Error(`Not a folder: ${root}`);
     const repo = await RepoService.open(root, this.log);
+    this.repo?.unwatch();
+    repo.watch(this.log);
     this.repo = repo;
     this.app = this.build(repo);
     this.source = source ?? checkoutSource(root) ?? readRecent().find((r) => r.root === root)?.source ?? { kind: "folder" };

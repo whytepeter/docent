@@ -1,4 +1,4 @@
-import type { AiProviderId, AskEvent, AskRequest, AskedBefore, BoardState, FlowsState, CloudVoiceProvider, LocalModel, Settings, VoiceClip, VoiceOption, VoiceProvider, VoiceStatus, FeaturesState, Job, SourceSlice, Workspace, CloneJob, GithubStart } from "@docent/contracts";
+import type { Status, AiProviderId, AskEvent, AskRequest, AskedBefore, BoardState, FlowsState, CloudVoiceProvider, LocalModel, Settings, VoiceClip, VoiceOption, VoiceProvider, VoiceStatus, FeaturesState, Job, SourceSlice, Workspace, CloneJob, GithubStart } from "@docent/contracts";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   // The server refuses state changes without this header, which other sites can't send.
@@ -58,6 +58,7 @@ export const api = {
   writeBoard: (id: string) => request<Job>(`/api/boards/${q(id)}/write`, { method: "POST" }),
   updateBoard: (id: string) => request<Job>(`/api/boards/${q(id)}/update`, { method: "POST" }),
   stopBoard: (id: string) => request<Job | null>(`/api/boards/${q(id)}/stop`, { method: "POST" }),
+  status: () => request<Status>("/api/status"),
   boardVoice: (id: string, at: number, beat: number, signal?: AbortSignal) => request<VoiceClip>(`/api/boards/${q(id)}/voice`, { ...json({ at, beat }), ...(signal ? { signal } : {}) }),
   settings: () => request<Settings>("/api/settings"),
   setKey: (provider: CloudVoiceProvider | "anthropic", key: string | null) => request<Settings>("/api/settings/keys", { ...json({ provider, key }), method: "PUT" }),

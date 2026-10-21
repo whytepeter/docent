@@ -1,10 +1,17 @@
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { existsSync, readFileSync, statSync, watch, writeFileSync, type FSWatcher } from "node:fs";
+import { join, resolve, sep } from "node:path";
 import { extract, git, isGitRepo, listPaths, loadCachedFacts, repoCacheDir, saveFacts, type Facts } from "@docent/extract";
 
 /** Agent state changes constantly and says nothing about the code. */
 const BOOKKEEPING = /^(\.wolf|\.claude|\.cursor|\.codex|\.agents)\//;
+/**
+ * Changes the watcher ignores: installed packages, build output, agent state, and git's own files, except
+ * the ones a commit, checkout or pull moves (HEAD and the refs).
+ */
+const UNWATCHED = /(^|\/)(node_modules|dist|build|out|coverage|\.next|\.nuxt|\.svelte-kit|\.turbo|\.cache|__pycache__|\.venv|venv|\.pytest_cache|\.mypy_cache)(\/|$)|^(\.wolf|\.claude|\.cursor|\.codex|\.agents)(\/|$)|^\.git\/(?!HEAD$|refs\/|packed-refs$)/;
+/** How long edits must settle before the code is read again (a save often touches a file twice). */
+const SETTLE_MS = 1000;
 
 /**
  * Owns one repo's facts: loads them from the cache, re-reads the repo when asked,
@@ -15,7 +22,12 @@ export class RepoService {
   facts: Facts;
   private fingerprint: string;
   extracting = false;
+  /** Moves on every time the facts are read again, so open screens know to check their boards. */
+  version = 0;
   private listeners = new Set<() => void>();
+  private watcher: FSWatcher | null = null;
+  private settleTimer: ReturnType<typeof setTimeout> | undefined;
+  private rereadAgain = false;
 
   private constructor(root: string, facts: Facts, fingerprint: string) {
     this.root = root;
@@ -58,6 +70,7 @@ export class RepoService {
       saveFacts(this.root, this.facts);
       writeMeta(this.root, fingerprint);
       this.fingerprint = fingerprint;
+      this.version++;
       for (const listener of this.listeners) listener();
     } finally {
       this.extracting = false;
@@ -66,6 +79,51 @@ export class RepoService {
 
   onChange(listener: () => void): void {
     this.listeners.add(listener);
+  }
+
+  /**
+   * Watches the folder while it's open: once edits settle, the code is read again in the background, so boards
+   * say "Code changed" without being reopened. Where the system can't watch a folder tree, staleness is still
+   * checked when a board opens or is drawn.
+   */
+  watch(log: (line: string) => void = () => {}): void {
+    if (this.watcher) return;
+    try {
+      this.watcher = watch(this.root, { recursive: true }, (_event, name) => {
+        const path = String(name ?? "").split(sep).join("/");
+        if (!path || UNWATCHED.test(path)) return;
+        clearTimeout(this.settleTimer);
+        this.settleTimer = setTimeout(() => void this.settle(log), SETTLE_MS);
+      });
+      this.watcher.on("error", () => this.unwatch());
+    } catch {
+      this.watcher = null;
+    }
+  }
+
+  unwatch(): void {
+    clearTimeout(this.settleTimer);
+    this.watcher?.close();
+    this.watcher = null;
+  }
+
+  /** Reads the code again if it really changed (the fingerprint decides); edits during a read get one more. */
+  private async settle(log: (line: string) => void): Promise<void> {
+    if (this.extracting) {
+      this.rereadAgain = true;
+      return;
+    }
+    try {
+      if (!this.isStale()) return;
+      log("The code changed; reading it again");
+      await this.reextract();
+    } catch (error) {
+      log(`Couldn't read the code again: ${(error as Error).message}`);
+    }
+    if (this.rereadAgain) {
+      this.rereadAgain = false;
+      void this.settle(log);
+    }
   }
 }
 

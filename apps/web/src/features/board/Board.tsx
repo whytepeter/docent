@@ -3,6 +3,7 @@ import type { Board, BoardState } from "@docent/contracts";
 import { api } from "../../shared/api/client.ts";
 import { useQuery } from "../../shared/api/useQuery.ts";
 import { nextRate, rateStore, thinkStore, voiceOnStore } from "../../shared/state/playback.ts";
+import { useCodeVersion } from "../../shared/state/code.ts";
 import { useStore } from "../../shared/state/store.ts";
 import { editorThemeStore, openCode, toHtml } from "../code/index.ts";
 import { timeLeft, useNow, useProgress } from "../jobs/index.ts";
@@ -117,6 +118,8 @@ export function BoardScreen({ id, repoName, onHome, onSettings }: { id: string; 
   const started = useRef(false);
   // Bumped after a redraw or update is started, so the board is watched again until the new one lands.
   const [kick, setKick] = useState(0);
+  // The server re-reads the code once edits settle; then the board is checked again, so "Code changed" shows up live.
+  const codeVersion = useCodeVersion();
   const rewrite = async (mode: "draw" | "update") => {
     await (mode === "update" ? api.updateBoard(id) : api.writeBoard(id));
     setKick((k) => k + 1);
@@ -145,7 +148,7 @@ export function BoardScreen({ id, repoName, onHome, onSettings }: { id: string; 
       live = false;
       clearTimeout(t);
     };
-  }, [id, kick]);
+  }, [id, kick, codeVersion]);
 
   if (error) return <div className="bd-msg">{error} <button className="bd-link" onClick={onHome}>Back to the flows</button></div>;
   if (!state) return <div className="bd-msg"><span className="spinner" /> Opening the board…</div>;
