@@ -18,6 +18,13 @@ export interface Graph {
   warnings: string[];
 }
 
+/**
+ * A node's first and last line (1-based), from the file's cached line table. ts-morph's own getters count
+ * newlines from the top of the file on every call, which made a large repo's graph take most of a minute.
+ */
+const startLine = (node: Node) => node.getSourceFile().compilerNode.getLineAndCharacterOfPosition(node.getStart()).line + 1;
+const endLine = (node: Node) => node.getSourceFile().compilerNode.getLineAndCharacterOfPosition(node.getEnd()).line + 1;
+
 export function loadProject(root: string, files: string[]): Project {
   const tsconfig = ["tsconfig.app.json", "tsconfig.json"].map((f) => join(root, f)).find(existsSync);
   const project = new Project({
@@ -128,7 +135,7 @@ export function buildGraph(project: Project, root: string): Graph {
             : tsx && /^[A-Z]/.test(named.name) && parentChain.length === 0 ? "component" : "function";
           symbols.push({
             id, name: named.name, kind, file,
-            range: { start: named.anchor.getStartLineNumber(), end: node.getEndLineNumber() },
+            range: { start: startLine(named.anchor), end: endLine(node) },
             exported: isExported(named.anchor),
             parent: parentChain.length ? `${file}#${parentChain.join(".")}` : null,
           });
@@ -141,14 +148,14 @@ export function buildGraph(project: Project, root: string): Graph {
         const name = node.getName() ?? "default";
         const id = `${file}#${name}`;
         const kind: SymbolKind = Node.isClassDeclaration(node) ? "class" : Node.isInterfaceDeclaration(node) ? "interface" : "type";
-        symbols.push({ id, name, kind, file, range: { start: node.getStartLineNumber(), end: node.getEndLineNumber() }, exported: node.isExported(), parent: null });
+        symbols.push({ id, name, kind, file, range: { start: startLine(node), end: endLine(node) }, exported: node.isExported(), parent: null });
         byNode.set(node, id);
         return;
       }
       if (Node.isVariableDeclaration(node) && Node.isSourceFile(node.getVariableStatement()?.getParent() ?? node) && Node.isIdentifier(node.getNameNode())) {
         // Top-level non-function constants: configuration and data a reader needs to find.
         const id = `${file}#${node.getName()}`;
-        symbols.push({ id, name: node.getName(), kind: "const", file, range: { start: node.getStartLineNumber(), end: node.getEndLineNumber() }, exported: isExported(node), parent: null });
+        symbols.push({ id, name: node.getName(), kind: "const", file, range: { start: startLine(node), end: endLine(node) }, exported: isExported(node), parent: null });
         byNode.set(node, id);
       }
       if (testFile && Node.isCallExpression(node) && TEST_FNS.has(calleeName(node) ?? "")) {
@@ -162,7 +169,7 @@ export function buildGraph(project: Project, root: string): Graph {
           .reverse();
         const name = title.getLiteralText();
         const id = `${file}#test:${[...suite, name].join(" > ")}`;
-        tests.push({ id, name, suite, file, range: { start: node.getStartLineNumber(), end: node.getEndLineNumber() } });
+        tests.push({ id, name, suite, file, range: { start: startLine(node), end: endLine(node) } });
         testByCallback.set(callback, id);
       }
     });
@@ -175,7 +182,7 @@ export function buildGraph(project: Project, root: string): Graph {
     const id = `${file}#${componentName(file)}`;
     components.set(file, id);
     if (!symbols.some((s) => s.id === id)) {
-      symbols.push({ id, name: componentName(file), kind: "component", file, range: { start: 1, end: sf.getEndLineNumber() }, exported: true, parent: null });
+      symbols.push({ id, name: componentName(file), kind: "component", file, range: { start: 1, end: endLine(sf) }, exported: true, parent: null });
     }
   }
   const symbolIds = new Set(symbols.map((s) => s.id));
@@ -268,7 +275,7 @@ export function buildGraph(project: Project, root: string): Graph {
         to: local ? rel(target) : asset,
         specifier: spec,
         names,
-        line: decl.getStartLineNumber(),
+        line: startLine(decl),
         kind: decl.isTypeOnly() ? "type" : "static",
         external: local || relativeSpec ? null : packageOf(spec),
         confidence: local || asset || !relativeSpec ? "confirmed" : "inferred",
@@ -280,7 +287,7 @@ export function buildGraph(project: Project, root: string): Graph {
       const target = decl.getModuleSpecifierSourceFile();
       imports.push({
         from: file, to: target && inRepo(target) ? rel(target) : null, specifier: spec,
-        names: decl.getNamedExports().map((n) => n.getName()), line: decl.getStartLineNumber(),
+        names: decl.getNamedExports().map((n) => n.getName()), line: startLine(decl),
         kind: "reexport", external: target && inRepo(target) ? null : spec.startsWith(".") ? null : packageOf(spec),
         confidence: target ? "confirmed" : "inferred",
       });
@@ -294,7 +301,7 @@ export function buildGraph(project: Project, root: string): Graph {
         if (expr.getKind() === SyntaxKind.ImportKeyword) {
           const arg = node.getArguments()[0];
           const spec = arg && Node.isStringLiteral(arg) ? arg.getLiteralText() : arg?.getText() ?? "?";
-          imports.push({ from: file, to: null, specifier: spec, names: [], line: node.getStartLineNumber(), kind: "dynamic", external: null, confidence: "inferred" });
+          imports.push({ from: file, to: null, specifier: spec, names: [], line: startLine(node), kind: "dynamic", external: null, confidence: "inferred" });
           return;
         }
         targetExpr = expr;
@@ -310,12 +317,12 @@ export function buildGraph(project: Project, root: string): Graph {
       try {
         target = resolve(targetExpr);
       } catch (error) {
-        warnings.push(`${file}:${node.getStartLineNumber()} could not resolve ${targetExpr.getText().slice(0, 40)}: ${(error as Error).message.slice(0, 80)}`);
+        warnings.push(`${file}:${startLine(node)} could not resolve ${targetExpr.getText().slice(0, 40)}: ${(error as Error).message.slice(0, 80)}`);
       }
       if (!target) return;
       const from = enclosing(node, file);
       if (from === target.id) return; // recursion is noise at this level
-      const line = node.getStartLineNumber();
+      const line = startLine(node);
       const key = `${from}|${target.id}|${kind}|${line}`;
       if (seen.has(key)) return;
       seen.add(key);

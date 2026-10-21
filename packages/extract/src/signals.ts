@@ -1,5 +1,6 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, posix } from "node:path";
+import { repoCacheDir } from "./cache.ts";
 import { pythonGoStackAndEntries } from "./manifests.ts";
 import { git } from "./repo.ts";
 import type { CommitFact, DocFact, DocMention, EntryFact, FileFact, SymbolFact } from "./types.ts";
@@ -46,11 +47,32 @@ export function readHistory(root: string, known: Set<string>): { commits: Commit
  * appears (`git log -S`), only if that commit deleted a line declaring it. A name the code never
  * declared (a browser API, an EXIF tag, a JSON field) returns null, so the doc isn't flagged.
  */
+type Removal = { sha: string; subject: string } | null;
+
+/**
+ * Which commit removed a name a doc still mentions. Each answer is a search of the whole history (seconds on a
+ * repo with many such names), and it depends only on the commits, so answers are kept per HEAD in Docent's own
+ * folder and reused until a new commit lands.
+ */
 function removalOf(root: string) {
-  const cache = new Map<string, { sha: string; subject: string } | null>();
-  return (name: string) => {
+  let head = "";
+  try {
+    head = git(root, ["rev-parse", "HEAD"]).trim();
+  } catch {
+    /* no history */
+  }
+  const file = join(repoCacheDir(root), "removals.json");
+  let cache = new Map<string, Removal>();
+  try {
+    const saved = JSON.parse(readFileSync(file, "utf8")) as { head: string; names: Record<string, Removal> };
+    if (head && saved.head === head) cache = new Map(Object.entries(saved.names));
+  } catch {
+    /* none yet */
+  }
+  let added = false;
+  const lookup = (name: string) => {
     if (!cache.has(name)) {
-      let found: { sha: string; subject: string } | null = null;
+      let found: Removal = null;
       try {
         const [sha, subject = ""] = git(root, ["log", "-S", name, "-1", "--format=%h%x09%s"]).trim().split("\t");
         if (sha) {
@@ -62,14 +84,20 @@ function removalOf(root: string) {
         /* no history */
       }
       cache.set(name, found);
+      added = true;
     }
     return cache.get(name)!;
   };
+  const save = () => {
+    if (head && added) writeFileSync(file, JSON.stringify({ head, names: Object.fromEntries(cache) }));
+  };
+  return { lookup, save };
 }
 
 export function readDocs(root: string, files: FileFact[], symbols: SymbolFact[]): DocFact[] {
   const paths = new Set(files.map((f) => f.path));
-  const removal = removalOf(root);
+  const removals = removalOf(root);
+  const removal = removals.lookup;
   const byName = new Map<string, string[]>();
   for (const s of symbols) byName.set(s.name, [...(byName.get(s.name) ?? []), s.id]);
 
@@ -115,6 +143,7 @@ export function readDocs(root: string, files: FileFact[], symbols: SymbolFact[])
     });
     docs.push({ path: file.path, kind: file.kind === "agent" ? "agent" : "doc", headings, mentions });
   }
+  removals.save();
   return docs;
 }
 
