@@ -5,7 +5,7 @@ import { readDocs, readHistory, readStackAndEntries, scanSource } from "./signal
 import { buildGoGraph } from "./go-graph.ts";
 import { buildPythonGraph } from "./py-graph.ts";
 import { parsers } from "./trees.ts";
-import { buildGraph, loadProject, type Graph } from "./ts-graph.ts";
+import { tsGraph, type Graph, type TsGraphCache } from "./ts-graph.ts";
 import type { Facts } from "./types.ts";
 
 export type * from "./types.ts";
@@ -20,10 +20,22 @@ const GRAPH_LANGS = new Set([...TS_LANGS, "python", "go"]);
 
 export interface ExtractOptions {
   onStage?: (stage: string) => void;
+  /**
+   * Kept by a caller that reads the same repo again (the server, as the code changes): the TypeScript project
+   * stays in memory, and only the files that changed, and the files that lead into them, are walked again.
+   */
+  cache?: ExtractCache;
 }
 
+export interface ExtractCache {
+  ts?: TsGraphCache;
+}
+
+/** What the TypeScript project is set up from: a change here means building it afresh. */
+const TS_CONFIG = ["tsconfig.app.json", "tsconfig.json", "package.json"];
+
 /** Stage 1: read the repo, never write to it, and return the fact set. */
-export async function extract(repoPath: string, { onStage = () => {} }: ExtractOptions = {}): Promise<Facts> {
+export async function extract(repoPath: string, { onStage = () => {}, cache }: ExtractOptions = {}): Promise<Facts> {
   const root = resolve(repoPath);
   const hasGit = isGitRepo(root);
 
@@ -42,7 +54,13 @@ export async function extract(repoPath: string, { onStage = () => {} }: ExtractO
   const pyFiles = code(new Set(["python"]));
   const goFiles = code(new Set(["go"]));
   const graphs: Graph[] = [];
-  if (tsFiles.length || (!pyFiles.length && !goFiles.length)) graphs.push(buildGraph(loadProject(root, tsFiles), root));
+  if (tsFiles.length || (!pyFiles.length && !goFiles.length)) {
+    const hash = new Map(files.map((f) => [f.path, f.hash]));
+    const config = TS_CONFIG.map((f) => hash.get(f) ?? "-").join(",");
+    const built = tsGraph(root, tsFiles.map((path) => ({ path, hash: hash.get(path)! })), config, cache?.ts);
+    if (cache) cache.ts = built.cache;
+    graphs.push(built.graph);
+  }
   if (pyFiles.length || goFiles.length) {
     const parser = await parsers();
     if (pyFiles.length) graphs.push(buildPythonGraph(root, pyFiles, parser.python));

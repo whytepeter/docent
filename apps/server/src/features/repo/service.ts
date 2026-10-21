@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, statSync, watch, writeFileSync, type FSWatcher } from "node:fs";
 import { join, resolve, sep } from "node:path";
-import { extract, git, isGitRepo, listPaths, loadCachedFacts, repoCacheDir, saveFacts, type Facts } from "@docent/extract";
+import { extract, git, isGitRepo, listPaths, loadCachedFacts, repoCacheDir, saveFacts, type ExtractCache, type Facts } from "@docent/extract";
 
 /** Agent state changes constantly and says nothing about the code. */
 const BOOKKEEPING = /^(\.wolf|\.claude|\.cursor|\.codex|\.agents)\//;
@@ -28,11 +28,14 @@ export class RepoService {
   private watcher: FSWatcher | null = null;
   private settleTimer: ReturnType<typeof setTimeout> | undefined;
   private rereadAgain = false;
+  /** The TypeScript project from the last read, kept so a re-read walks only what changed. */
+  private cache: ExtractCache = {};
 
-  private constructor(root: string, facts: Facts, fingerprint: string) {
+  private constructor(root: string, facts: Facts, fingerprint: string, cache: ExtractCache = {}) {
     this.root = root;
     this.facts = facts;
     this.fingerprint = fingerprint;
+    this.cache = cache;
   }
 
   static async open(repo: string, log: (line: string) => void = () => {}): Promise<RepoService> {
@@ -43,10 +46,11 @@ export class RepoService {
     // Cached facts are used only while the code is as they describe it; otherwise the repo is read again.
     if (cached && meta && meta.fingerprint === fingerprint) return new RepoService(root, cached, meta.fingerprint);
     if (cached) log("The code changed since it was last read; reading it again");
-    const facts = await extract(root, { onStage: (stage) => log(stage) });
+    const cache: ExtractCache = {};
+    const facts = await extract(root, { onStage: (stage) => log(stage), cache });
     saveFacts(root, facts);
     writeMeta(root, fingerprint);
-    return new RepoService(root, facts, fingerprint);
+    return new RepoService(root, facts, fingerprint, cache);
   }
 
   /** True when the working tree no longer matches what the facts describe. */
@@ -66,7 +70,7 @@ export class RepoService {
     this.extracting = true;
     try {
       const fingerprint = currentFingerprint(this.root);
-      this.facts = await extract(this.root);
+      this.facts = await extract(this.root, { cache: this.cache });
       saveFacts(this.root, this.facts);
       writeMeta(this.root, fingerprint);
       this.fingerprint = fingerprint;

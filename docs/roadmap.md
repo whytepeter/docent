@@ -297,7 +297,7 @@ The map-and-inspector screens gave way to one idea: pick a flow of the codebase,
   - Line numbers come from TypeScript's cached line table. ts-morph's getters counted newlines from the top of the file on every call, which was 77% of the time: the call graph on a 779-file app went from 40 s to 11 s, with identical facts.
   - Which commit removed a name a doc still mentions (`git log -S`, once per name) is kept per HEAD in `removals.json`, so it's redone only after a new commit: 8 s to 0.5 s on two test apps.
   - Whole re-read: 49 s to 12 s on the 779-file app, 13 s to 4 s on the 268-file one, a fraction of a second on small repos.
-- Still to do: per-file incremental call graphs (re-walk only the changed files and the files that import them). What's left of the 11 s is real type-checking.
+- **Incremental call graph ✅ (Oct 21):** the server keeps the TypeScript project in memory between reads. A re-read refreshes only the files whose content hash changed, and walks again (pass 2, the type checker's part) just those files and the files whose imports or links lead into one, through re-exporting barrels too; every other file keeps its links. Files go in path order, so the result is the same graph a full read gives: checked by a test (rename, new file, deleted file, edit, config change) and on two real apps. A tsconfig or package.json change builds the project afresh. Saving one file in the 779-file app: about 12 s to 2.2 s; on the 268-file app, 0.8 s. The first re-read after the server starts is still a full one.
 
 ### M8: More languages and monorepos
 Today the call graph covers TypeScript, JavaScript, Vue and Svelte components, Python and Go. Other files are read as text only, so boards on them lean more on reading the code.

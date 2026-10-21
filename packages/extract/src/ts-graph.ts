@@ -101,7 +101,19 @@ function isExported(anchor: Node): boolean {
   return false;
 }
 
-export function buildGraph(project: Project, root: string): Graph {
+/** What pass 2 found in one file: its links, imports and warnings. Kept between reads, so an unchanged file isn't walked again. */
+export interface FileWalk {
+  edges: EdgeFact[];
+  imports: ImportFact[];
+  warnings: string[];
+}
+
+/**
+ * The call graph of a TypeScript project. Pass 1 (symbols and tests, no type checker) runs on every file; pass 2
+ * (links, through the type checker) runs per file, and with `reuse` only on the files in `rewalk`, taking the
+ * others' results from the last build. Files go in path order, so a build and a rebuild give the same graph.
+ */
+export function buildGraph(project: Project, root: string, reuse?: { walked: Map<string, FileWalk>; rewalk: Set<string> }): Graph & { walked: Map<string, FileWalk> } {
   const rel = (sf: SourceFile) => realPath(relative(root, sf.getFilePath()));
   const inRepo = (sf: SourceFile) => !sf.getFilePath().includes(`${sep}node_modules${sep}`) && !sf.isDeclarationFile() && sf.getFilePath().startsWith(root);
 
@@ -109,9 +121,8 @@ export function buildGraph(project: Project, root: string): Graph {
   const byNode = new Map<Node, string>(); // anchor and function nodes → symbol id
   const tests: TestFact[] = [];
   const testByCallback = new Map<Node, string>();
-  const warnings: string[] = [];
 
-  const repoFiles = project.getSourceFiles().filter(inRepo);
+  const repoFiles = project.getSourceFiles().filter(inRepo).sort((a, b) => (rel(a) < rel(b) ? -1 : rel(a) > rel(b) ? 1 : 0));
 
   // ---- pass 1: symbols and test cases
   for (const sf of repoFiles) {
@@ -251,13 +262,12 @@ export function buildGraph(project: Project, root: string): Graph {
     return null;
   };
 
-  // ---- pass 2: edges and imports
-  const edges: EdgeFact[] = [];
-  const seen = new Set<string>();
-  const imports: ImportFact[] = [];
-
-  for (const sf of repoFiles) {
-    const file = rel(sf);
+  // ---- pass 2: edges and imports, one file at a time
+  const walkFile = (sf: SourceFile, file: string): FileWalk => {
+    const edges: EdgeFact[] = [];
+    const seen = new Set<string>();
+    const imports: ImportFact[] = [];
+    const warnings: string[] = [];
 
     for (const decl of sf.getImportDeclarations()) {
       const spec = decl.getModuleSpecifierValue();
@@ -328,7 +338,20 @@ export function buildGraph(project: Project, root: string): Graph {
       seen.add(key);
       edges.push({ from, to: target.id, kind, file, line, confidence: target.confidence, ...(target.via ? { via: target.via } : {}) });
     });
+    return { edges, imports, warnings };
+  };
+
+  const walked = new Map<string, FileWalk>();
+  for (const sf of repoFiles) {
+    const file = rel(sf);
+    const kept = reuse && !reuse.rewalk.has(file) ? reuse.walked.get(file) : undefined;
+    walked.set(file, kept ?? walkFile(sf, file));
   }
+  // Copies, so marking an edge below never changes what's kept for the next build.
+  const edges = [...walked.values()].flatMap((w) => w.edges.map((e) => ({ ...e })));
+  const imports = [...walked.values()].flatMap((w) => w.imports);
+  const warnings = [...walked.values()].flatMap((w) => w.warnings);
+  const seen = new Set(edges.map((e) => `${e.from}|${e.to}|${e.kind}|${e.line}`));
 
   templateEdges(root, repoFiles.filter((sf) => isViewPath(sf.getFilePath())).map(rel), components, symbols, imports, edges, seen);
 
@@ -338,7 +361,7 @@ export function buildGraph(project: Project, root: string): Graph {
       edge.via = "target not in symbol table";
     }
   }
-  return { symbols, edges, imports, tests, warnings };
+  return { symbols, edges, imports, tests, warnings, walked };
 }
 
 function assetPath(root: string, from: string, spec: string): string | null {
@@ -395,4 +418,70 @@ function templateEdges(root: string, files: string[], components: Map<string, st
       if (to && to !== from) add({ from, to, kind: "calls", file, line: n.line, confidence: "confirmed", via: "used in the template" });
     }
   }
+}
+
+/** A TypeScript project kept in memory between reads of one repo, with what pass 2 found in each file. */
+export interface TsGraphCache {
+  root: string;
+  /** The tsconfig and package.json contents it was built with; any change there means a fresh build. */
+  config: string;
+  project: Project;
+  hashes: Map<string, string>;
+  walked: Map<string, FileWalk>;
+}
+
+/** The repo file a symbol id belongs to (`src/a.ts#fn` → `src/a.ts`). */
+const fileOfId = (id: string) => id.split("#")[0]!;
+
+/**
+ * The TypeScript graph, built again only where the code changed. Changed files are refreshed in the kept project;
+ * pass 2 then walks them again along with every file whose imports or links lead into one (through barrels that
+ * re-export it, too), since what those resolve to may have moved, been renamed or gone. Other files keep their links.
+ */
+export function tsGraph(root: string, files: { path: string; hash: string }[], config: string, cache?: TsGraphCache): { graph: Graph; cache: TsGraphCache } {
+  const hashes = new Map(files.map((f) => [f.path, f.hash]));
+  if (!cache || cache.root !== root || cache.config !== config) {
+    const project = loadProject(root, files.map((f) => f.path));
+    const { walked, ...graph } = buildGraph(project, root);
+    return { graph, cache: { root, config, project, hashes, walked } };
+  }
+  const { project } = cache;
+  const changed = new Set<string>();
+  for (const [path, hash] of hashes) if (cache.hashes.get(path) !== hash) changed.add(path);
+  for (const path of cache.hashes.keys()) if (!hashes.has(path)) changed.add(path);
+  // Dependencies are looked up again only when a file was added or a changed file imports something new.
+  let newImports = false;
+  for (const path of changed) {
+    const full = join(root, path);
+    const at = sfcKind(path) ? viewPath(full) : full;
+    let sf = project.getSourceFile(at);
+    if (!hashes.has(path)) {
+      if (sf) project.removeSourceFile(sf);
+      continue;
+    }
+    if (sfcKind(path)) sf = project.createSourceFile(at, scriptView(readFileSync(full, "utf8")), { overwrite: true });
+    else if (sf) sf.refreshFromFileSystemSync();
+    else sf = project.addSourceFileAtPath(full);
+    const before = new Set(cache.walked.get(path)?.imports.map((i) => i.specifier));
+    if (!cache.walked.has(path) || sf.getImportDeclarations().some((d) => !before.has(d.getModuleSpecifierValue()))) newImports = true;
+  }
+  if (newImports) project.resolveSourceFileDependencies();
+
+  // A barrel that re-exports a changed file passes the change on to whoever imports the barrel.
+  const reached = new Set(changed);
+  for (let frontier = changed; frontier.size; ) {
+    const next = new Set<string>();
+    for (const [file, w] of cache.walked) {
+      if (!reached.has(file) && w.imports.some((i) => i.kind === "reexport" && i.to && frontier.has(i.to))) (reached.add(file), next.add(file));
+    }
+    frontier = next;
+  }
+  const rewalk = new Set([...changed].filter((p) => hashes.has(p)));
+  for (const [file, w] of cache.walked) {
+    if (w.imports.some((i) => i.to && reached.has(i.to)) || w.edges.some((e) => reached.has(fileOfId(e.to)))) rewalk.add(file);
+  }
+  const { walked, ...graph } = buildGraph(project, root, { walked: cache.walked, rewalk });
+  cache.hashes = hashes;
+  cache.walked = walked;
+  return { graph, cache };
 }
